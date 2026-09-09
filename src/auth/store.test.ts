@@ -26,6 +26,10 @@ function service(): AuthService {
     }),
     remindPassword: vi.fn().mockResolvedValue(undefined),
     checkReferralCode: vi.fn().mockResolvedValue({ exists: true }),
+    updateProfile: vi.fn().mockImplementation(async (_currentUser, request) => ({
+      user: { ...user, ...request.values }, car: null, uploadedFileIds: {},
+    })),
+    getAuthorizedCars: vi.fn().mockResolvedValue([]),
     getAuthorizedUser: vi.fn().mockResolvedValue(user),
     logout: vi.fn().mockResolvedValue(undefined),
   }
@@ -46,5 +50,23 @@ describe('AuthStore', () => {
     const store = new AuthStore(service(), storage)
     await store.initialize()
     expect(store.getSnapshot()).toMatchObject({ status: 'authenticated', user, tokens })
+  })
+
+  it('обновляет пользователя в состоянии после редактирования профиля', async () => {
+    const client = service()
+    const store = new AuthStore(client, new MemoryTokenStorage())
+    await store.login({ login: 'u@example.com', password: 'secret', type: 'e-mail' })
+
+    await store.updateProfile({ values: { u_name: 'Новое имя' } })
+
+    expect(client.updateProfile).toHaveBeenCalledWith(
+      user,
+      { values: { u_name: 'Новое имя' } },
+      tokens,
+    )
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'authenticated',
+      user: { u_name: 'Новое имя' },
+    })
   })
 })

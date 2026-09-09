@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AuthApiError } from './errors'
 import { HttpAuthClient, normalizeDriverPhone } from './client'
-import { UserRole } from './types'
+import { UserCheckState, UserRole } from './types'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -138,5 +138,93 @@ describe('HttpAuthClient', () => {
     expect(uploadForm.get('file')).toContain('data:image/png;base64,AA==')
     const carForm = fetcher.mock.calls[3][1]?.body as FormData
     expect(JSON.parse(String(carForm.get('data')))).toMatchObject({ cm_id: '3', seats: 4 })
+  })
+
+  it('редактирует профиль клиента и повторно загружает пользователя', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({
+        data: { user: { 1: { u_id: 1, u_name: 'Новое имя', u_email: 'new@example.com', u_role: 1 } } },
+      }))
+    const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
+    const currentUser = { u_id: '1', u_name: 'Старое имя', u_email: 'old@example.com', u_role: UserRole.Client }
+
+    const result = await client.updateProfile(currentUser, {
+      values: { u_name: 'Новое имя', u_email: 'new@example.com', u_gps_software: 'excluded' },
+    }, { token: 't', u_hash: 'h' })
+
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      'https://api.example/user',
+      'https://api.example/user/authorized',
+    ])
+    const editForm = fetcher.mock.calls[0][1]?.body as FormData
+    const editData = JSON.parse(String(editForm.get('data')))
+    expect(editData).toMatchObject({ u_name: 'Новое имя', u_email: 'new@example.com' })
+    expect(editData).not.toHaveProperty('u_gps_software')
+    expect(result.user.u_name).toBe('Новое имя')
+  })
+
+  it('редактирует автомобиль и документы водителя до проверки', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ data: { ref_code_free: false } }))
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({ data: { dl_id: 88 } }))
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({
+        data: { user: { 2: { u_id: 2, u_name: 'Driver', u_email: 'd@example.com', u_role: 2, u_check_state: 1 } } },
+      }))
+    const client = new HttpAuthClient({
+      baseUrl: 'https://api.example', fetch: fetcher,
+      fileToBase64: vi.fn().mockResolvedValue('data:image/png;base64,AA=='),
+    })
+    const currentUser = {
+      u_id: '2', u_name: 'Driver', u_email: 'd@example.com',
+      u_role: UserRole.Driver, u_check_state: UserCheckState.Required, ref_code: 'OLD',
+    }
+
+    const result = await client.updateProfile(currentUser, {
+      values: { u_name: 'Driver 2', ref_code: 'NEW', u_currency: 'excluded' },
+      documents: {
+        passport_photo: { existingIds: [10], files: [new Blob(['x'])] },
+      },
+      car: {
+        c_id: '4', cm_id: '3', seats: 4,
+        registration_plate: 'A1', color: 'red', cc_id: '2', ignored: true,
+      },
+    }, { token: 't', u_hash: 'h' })
+
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      'https://api.example/referral/code/NEW/check',
+      'https://api.example/car/4',
+      'https://api.example/dropbox/file',
+      'https://api.example/user',
+      'https://api.example/user/authorized',
+    ])
+    expect(result.uploadedFileIds.passport_photo).toEqual(['10', '88'])
+    const userForm = fetcher.mock.calls[3][1]?.body as FormData
+    const userData = JSON.parse(String(userForm.get('data')))
+    expect(userData.u_name).toBe('Driver 2')
+    expect(userData).not.toHaveProperty('u_currency')
+    expect(userData.u_details).toContainEqual(['=', ['passport_photo'], ['10', '88']])
+  })
+
+  it('возвращает понятную ошибку для занятого госномера', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({
+      status: 'error',
+      message: 'busy registration plate',
+    }))
+    const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
+
+    await expect(client.updateProfile({
+      u_id: '2', u_name: 'Driver', u_email: 'd@example.com', u_role: UserRole.Driver,
+    }, {
+      values: {},
+      car: {
+        c_id: '4', cm_id: '3', seats: 4,
+        registration_plate: 'A1', color: 'red', cc_id: '2',
+      },
+    }, { token: 't', u_hash: 'h' })).rejects.toMatchObject({
+      message: 'Этот госномер уже используется',
+    })
   })
 })

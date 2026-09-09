@@ -8,7 +8,13 @@ import {
 } from 'react'
 import { AuthStore } from './store'
 import type { TokenStorage } from './storage'
-import type { AuthService, LoginRequest, RegisterRequest, RegisterResult } from './types'
+import type {
+  AuthService,
+  LoginRequest,
+  RegisterRequest,
+  RegisterResult,
+  UpdateProfileRequest,
+} from './types'
 
 interface AuthContextValue {
   store: AuthStore
@@ -47,6 +53,8 @@ export function useAuth() {
     register: (request: RegisterRequest): Promise<RegisterResult> => context.store.register(request),
     remindPassword: (email: string): Promise<void> => context.store.remindPassword(email),
     checkReferralCode: (code: string) => context.store.checkReferralCode(code),
+    updateProfile: (request: UpdateProfileRequest) => context.store.updateProfile(request),
+    getAuthorizedCars: () => context.store.getAuthorizedCars(),
     logout: (): Promise<void> => context.store.logout(),
     clearError: (): void => context.store.clearError(),
   }

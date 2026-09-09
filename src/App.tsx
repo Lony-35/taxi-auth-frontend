@@ -6,6 +6,7 @@ import {
   type RegistrationType,
   type RegistrationUpload,
 } from './auth'
+import ProfileEditor from './ProfileEditor'
 
 interface AppProps { useMock: boolean }
 type Tab = 'login' | 'register'
@@ -21,6 +22,7 @@ export default function App({ useMock }: AppProps) {
   const { state, login, register, remindPassword, checkReferralCode, logout, clearError } = useAuth()
   const [tab, setTab] = useState<Tab>('login')
   const [notice, setNotice] = useState('')
+  const [editingProfile, setEditingProfile] = useState(false)
   const [loginValue, setLoginValue] = useState(useMock ? 'demo@example.com' : '')
   const [password, setPassword] = useState(useMock ? 'demo' : '')
   const [registrationType, setRegistrationType] = useState<RegistrationType>('e-mail')
@@ -126,6 +128,15 @@ export default function App({ useMock }: AppProps) {
   }
 
   if (state.user) {
+    if (editingProfile) {
+      return (
+        <main className="shell single">
+          <section className="card wide-card profile-edit-card">
+            <ProfileEditor user={state.user} onClose={() => setEditingProfile(false)} />
+          </section>
+        </main>
+      )
+    }
     return (
       <main className="shell single"><section className="card profile-card">
         <div className="success-mark" aria-hidden="true">✓</div>
@@ -137,7 +148,10 @@ export default function App({ useMock }: AppProps) {
           <div><dt>Телефон</dt><dd>{state.user.u_phone || 'не указан'}</dd></div>
           <div><dt>Роль</dt><dd>{state.user.u_role === UserRole.Driver ? 'Водитель' : 'Клиент'}</dd></div>
         </dl>
-        <button className="button secondary" disabled={loading} onClick={() => void logout()}>Выйти</button>
+        <div className="actions">
+          <button className="button" onClick={() => setEditingProfile(true)}>Редактировать</button>
+          <button className="button secondary" disabled={loading} onClick={() => void logout()}>Выйти</button>
+        </div>
       </section></main>
     )
   }

@@ -4,10 +4,13 @@ import type {
   AuthSession,
   AuthTokens,
   AuthUser,
+  DriverCar,
   LoginRequest,
+  ProfileUpdateResult,
   RegisterRequest,
   RegisterResult,
   ReferralCodeResult,
+  UpdateProfileRequest,
 } from './types'
 import { UserRole } from './types'
 
@@ -24,6 +27,10 @@ const demoTokens: AuthTokens = { token: 'demo-token', u_hash: 'demo-user-hash' }
 
 export class MockAuthClient implements AuthService {
   private user: AuthUser = demoUser
+  private car: DriverCar = {
+    c_id: 'demo-car', cm_id: 'model-1', seats: 4,
+    registration_plate: 'DEMO-01', color: 'green', cc_id: 'economy',
+  }
 
   async login(request: LoginRequest): Promise<AuthSession> {
     await Promise.resolve()
@@ -63,6 +70,21 @@ export class MockAuthClient implements AuthService {
   async checkReferralCode(code: string): Promise<ReferralCodeResult> {
     await Promise.resolve()
     return { exists: code.trim().toUpperCase() === 'TAXI2026' }
+  }
+
+  async updateProfile(
+    currentUser: AuthUser,
+    request: UpdateProfileRequest,
+  ): Promise<ProfileUpdateResult> {
+    await Promise.resolve()
+    this.user = { ...currentUser, ...request.values }
+    if (request.car) this.car = request.car
+    return { user: this.user, car: request.car ?? null, uploadedFileIds: {} }
+  }
+
+  async getAuthorizedCars(): Promise<DriverCar[]> {
+    await Promise.resolve()
+    return this.user.u_role === UserRole.Driver ? [this.car] : []
   }
 
   async getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser> {

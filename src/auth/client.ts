@@ -5,14 +5,18 @@ import type {
   AuthSession,
   AuthTokens,
   AuthUser,
+  DriverCar,
   DriverCarRequest,
   LoginRequest,
+  ProfileUpdateResult,
   ReferralCodeResult,
   RegisterRequest,
   RegisterResult,
   RegistrationUpload,
+  UpdateProfileRequest,
 } from './types'
 import { normalizeUser } from './userMapping'
+import { allowedProfileFields, carProfileFields, filterFields, toLegacyDetails } from './profile'
 
 interface ApiEnvelope {
   status?: string
@@ -39,6 +43,7 @@ export interface AuthEndpoints {
   editUser: string
   createCar: string
   editCar: (id: string) => string
+  authorizedCars: string
   authorizedUser: string
   logout: string
 }
@@ -64,6 +69,7 @@ const defaultEndpoints: AuthEndpoints = {
   editUser: '/user',
   createCar: '/car',
   editCar: id => `/car/${encodeURIComponent(id)}`,
+  authorizedCars: '/user/authorized/car',
   authorizedUser: '/user/authorized',
   logout: '/logout',
 }
@@ -89,6 +95,7 @@ function messageToError(message: string, details?: unknown): AuthApiError {
     'wrong password': ['Неверный пароль', 'wrong_password'],
     'wrong phone': ['Неверный номер телефона', 'wrong_phone'],
     'code sent': ['Код подтверждения отправлен', 'code_sent'],
+    'busy registration plate': ['Этот госномер уже используется', 'unknown'],
   } as const
   const known = map[normalized as keyof typeof map]
   return known
@@ -241,6 +248,75 @@ export class HttpAuthClient implements AuthService {
     return { exists: !Boolean(data.ref_code_free) }
   }
 
+  async updateProfile(
+    currentUser: AuthUser,
+    data: UpdateProfileRequest,
+    tokens: AuthTokens,
+  ): Promise<ProfileUpdateResult> {
+    if (data.values.ref_code && data.values.ref_code !== currentUser.ref_code) {
+      const referral = await this.checkReferralCode(String(data.values.ref_code))
+      if (!referral.exists) {
+        throw new AuthApiError('Промокод не найден', 'unknown')
+      }
+    }
+
+    const values = filterFields(data.values, allowedProfileFields(currentUser))
+    if (currentUser.u_role === 2 && typeof values.u_phone === 'string') {
+      values.u_phone = normalizeDriverPhone(values.u_phone, this.options.driverPhonePrefix)
+    }
+    if (data.avatar) values.u_photo = await this.fileToBase64(data.avatar)
+
+    let updatedCar: DriverCar | null = null
+    if (currentUser.u_role === 2 && data.car) {
+      const carValues = filterFields(data.car, carProfileFields)
+      const envelope = await this.post(this.endpoints.editCar(data.car.c_id), {
+        ...tokens,
+        data: JSON.stringify(carValues),
+      })
+      updatedCar = data.car
+    }
+
+    const uploadedFileIds: ProfileUpdateResult['uploadedFileIds'] = {}
+    if (currentUser.u_role === 2 && data.documents) {
+      const details = record(values.u_details ?? currentUser.u_details)
+      for (const name of ['passport_photo', 'driver_license_photo'] as const) {
+        const change = data.documents[name]
+        if (!change) continue
+        const ids = (change.existingIds ?? []).map(String)
+        for (const file of change.files ?? []) {
+          ids.push(await this.uploadRegistrationFile(file, currentUser.u_id, tokens))
+        }
+        details[name] = ids
+        uploadedFileIds[name] = ids
+      }
+      values.u_details = details
+    }
+
+    await this.editUser(values, tokens)
+    return {
+      user: await this.getAuthorizedUser(tokens),
+      car: updatedCar,
+      uploadedFileIds,
+    }
+  }
+
+  async getAuthorizedCars(tokens: AuthTokens): Promise<DriverCar[]> {
+    const envelope = await this.post(this.endpoints.authorizedCars, { ...tokens })
+    const cars = record(nestedData(envelope).car)
+    return Object.values(cars).map(raw => {
+      const value = record(raw)
+      return {
+        ...value,
+        c_id: String(value.c_id ?? ''),
+        cm_id: String(value.cm_id ?? ''),
+        seats: Number(value.seats ?? 0),
+        registration_plate: String(value.registration_plate ?? ''),
+        color: String(value.color ?? ''),
+        cc_id: String(value.cc_id ?? ''),
+      } as DriverCar
+    })
+  }
+
   async getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser> {
     const envelope = await this.post(this.endpoints.authorizedUser, {
       token: tokens.token,
@@ -291,12 +367,25 @@ export class HttpAuthClient implements AuthService {
     for (const [key, ids] of Object.entries(uploadedFileIds)) {
       mergedDetails[key] = JSON.stringify(ids)
     }
-    const legacyDetails = Object.entries(mergedDetails)
-      .map(([key, value]) => ['=', [key], value ?? ''])
+    const legacyDetails = toLegacyDetails(mergedDetails)
     await this.post(this.endpoints.editUser, {
       ...tokens,
       u_id: userId,
       data: JSON.stringify({ u_details: legacyDetails }),
+    })
+  }
+
+  private async editUser(values: Record<string, unknown>, tokens: AuthTokens): Promise<void> {
+    const { u_city, u_details, ...userData } = values
+    await this.post(this.endpoints.editUser, {
+      ...tokens,
+      data: JSON.stringify({
+        u_city: u_city || undefined,
+        ...userData,
+        ...(u_details && typeof u_details === 'object'
+          ? { u_details: toLegacyDetails(record(u_details)) }
+          : {}),
+      }),
     })
   }
 

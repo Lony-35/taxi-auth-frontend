@@ -12,6 +12,10 @@
 | `src/API/index.ts#checkRefCode` | `src/auth/client.ts#checkReferralCode` | Проверка промокода. |
 | `src/API/car.ts#createUserCar` | `src/auth/client.ts#createDriverCar` | Создание автомобиля водителя. |
 | `src/API/car.ts#setDefaultCarLicenses` | `src/auth/client.ts#setDefaultCarLicense` | Назначение лицензии при заданной конфигурации. |
+| `src/components/modals/ProfileModal.tsx` | `src/ProfileEditor.tsx`, `src/auth/client.ts#updateProfile` | Редактирование клиента и водителя с теми же ограничениями по роли и статусу проверки. |
+| `src/API/user.ts#editUser` | `src/auth/client.ts#editUser` | Сохранён `POST /user` и legacy-формат `u_details`. |
+| `src/API/user.ts#getUserCars` | `src/auth/client.ts#getAuthorizedCars` | Загрузка автомобиля через `/user/authorized/car`. |
+| `src/API/car.ts#editCar` | `src/auth/client.ts#updateProfile` | Редактирование автомобиля до сохранения профиля. |
 | `src/state/user/*` | `src/auth/store.ts` | Saga/reducer заменены независимым store. |
 | `LoginModal/Login.tsx` | `src/App.tsx` | Email/телефон, пароль, восстановление и выход. |
 | `LoginModal/Register.tsx`, `RegisterJSON.tsx` | `src/App.tsx` + `RegisterRequest` | Клиентская и водительская формы, документы, автомобиль и произвольные server-driven поля. |

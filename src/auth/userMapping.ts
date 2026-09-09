@@ -1,5 +1,5 @@
 import type { AuthUser } from './types'
-import { UserRole } from './types'
+import { UserCheckState, UserRole } from './types'
 
 function optionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined
@@ -31,6 +31,7 @@ export function normalizeUser(value: unknown): AuthUser {
   const id = raw.u_id
   if (id === undefined || id === null) throw new Error('У пользователя отсутствует u_id')
   const numericRole = Number(raw.u_role)
+  const numericCheckState = Number(raw.u_check_state)
 
   return {
     ...raw,
@@ -39,6 +40,9 @@ export function normalizeUser(value: unknown): AuthUser {
     u_email: String(raw.u_email ?? ''),
     u_phone: raw.u_phone === undefined ? undefined : String(raw.u_phone),
     u_role: (Number.isFinite(numericRole) ? numericRole : UserRole.Client) as UserRole,
+    u_check_state: Number.isFinite(numericCheckState) && numericCheckState > 0
+      ? numericCheckState as UserCheckState
+      : undefined,
     u_active: optionalBoolean(raw.u_active),
     u_phone_checked: optionalBoolean(raw.u_phone_checked),
     u_details: details(raw.u_details),

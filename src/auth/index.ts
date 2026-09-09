@@ -10,8 +10,15 @@ export {
 } from './storage'
 export type { TokenStorage } from './storage'
 export { MockAuthClient } from './mock'
-export { UserRole } from './types'
+export { UserCheckState, UserRole } from './types'
 export { jsonDetailsSerializer, taxiDetailsSerializer } from './formData'
+export {
+  allowedProfileFields,
+  carProfileFields,
+  clientProfileFields,
+  driverActiveProfileFields,
+  driverRequiredProfileFields,
+} from './profile'
 export type {
   AuthService,
   AuthSession,
@@ -19,11 +26,15 @@ export type {
   AuthStatus,
   AuthTokens,
   AuthUser,
-  LoginRequest,
+  DriverCar,
   DriverCarRequest,
+  LoginRequest,
+  ProfileDocumentChange,
+  ProfileUpdateResult,
   ReferralCodeResult,
   RegisterRequest,
   RegisterResult,
   RegistrationUpload,
   RegistrationType,
+  UpdateProfileRequest,
 } from './types'

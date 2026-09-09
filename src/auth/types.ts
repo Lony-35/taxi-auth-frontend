@@ -9,6 +9,13 @@ export enum UserRole {
   Agent = 4,
 }
 
+export enum UserCheckState {
+  Required = 1,
+  Active = 2,
+  Rejected = 3,
+  Blocked = 4,
+}
+
 export interface AuthTokens {
   token: string
   u_hash: string
@@ -22,8 +29,18 @@ export interface AuthUser {
   u_role: UserRole
   u_family?: string
   u_middle?: string
+  u_check_state?: UserCheckState
+  u_photo?: string
+  u_city?: string
+  u_lang?: string
+  u_currency?: string
+  u_lang_skills?: string
+  u_description?: string
+  u_birthday?: string
+  u_gps_software?: string
   u_active?: boolean
   u_phone_checked?: boolean
+  ref_code?: string
   u_details?: Record<string, unknown>
   [key: string]: unknown
 }
@@ -47,6 +64,30 @@ export interface DriverCarRequest {
   cc_id: string
   photo?: string
   details?: Record<string, unknown>
+}
+
+export interface DriverCar extends DriverCarRequest {
+  c_id: string
+  u_id?: string
+  [key: string]: unknown
+}
+
+export interface ProfileDocumentChange {
+  existingIds?: Array<string | number>
+  files?: Blob[]
+}
+
+export interface UpdateProfileRequest {
+  values: Record<string, unknown>
+  avatar?: Blob
+  documents?: Partial<Record<'passport_photo' | 'driver_license_photo', ProfileDocumentChange>>
+  car?: DriverCar
+}
+
+export interface ProfileUpdateResult {
+  user: AuthUser
+  car: DriverCar | null
+  uploadedFileIds: Partial<Record<'passport_photo' | 'driver_license_photo', string[]>>
 }
 
 export interface RegisterRequest {
@@ -96,6 +137,12 @@ export interface AuthService {
   register(data: RegisterRequest): Promise<RegisterResult>
   remindPassword(email: string): Promise<void>
   checkReferralCode(code: string): Promise<ReferralCodeResult>
+  updateProfile(
+    currentUser: AuthUser,
+    data: UpdateProfileRequest,
+    tokens: AuthTokens,
+  ): Promise<ProfileUpdateResult>
+  getAuthorizedCars(tokens: AuthTokens): Promise<DriverCar[]>
   getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser>
   logout(tokens: AuthTokens | null): Promise<void>
 }

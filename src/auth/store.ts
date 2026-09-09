@@ -4,10 +4,13 @@ import type {
   AuthListener,
   AuthService,
   AuthState,
+  DriverCar,
   LoginRequest,
+  ProfileUpdateResult,
   RegisterRequest,
   RegisterResult,
   ReferralCodeResult,
+  UpdateProfileRequest,
 } from './types'
 
 const initialState: AuthState = {
@@ -99,6 +102,24 @@ export class AuthStore {
 
   checkReferralCode = (code: string): Promise<ReferralCodeResult> => {
     return this.client.checkReferralCode(code)
+  }
+
+  updateProfile = async (request: UpdateProfileRequest): Promise<ProfileUpdateResult> => {
+    if (!this.state.user || !this.state.tokens) throw new Error('Пользователь не авторизован')
+    this.patch({ status: 'loading', error: null })
+    try {
+      const result = await this.client.updateProfile(this.state.user, request, this.state.tokens)
+      this.patch({ status: 'authenticated', user: result.user, error: null })
+      return result
+    } catch (error) {
+      this.patch({ status: 'error', error: toErrorMessage(error) })
+      throw error
+    }
+  }
+
+  getAuthorizedCars = (): Promise<DriverCar[]> => {
+    if (!this.state.tokens) return Promise.resolve([])
+    return this.client.getAuthorizedCars(this.state.tokens)
   }
 
   logout = async (): Promise<void> => {
