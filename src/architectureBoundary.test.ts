@@ -11,15 +11,30 @@ import taxiMapping from './providers/taxi/mapping.ts?raw'
 import taxiProfile from './providers/taxi/profile.ts?raw'
 import taxiUserMapping from './providers/taxi/taxiUserMapping.ts?raw'
 
+const coreSources = [contract, model, fakeProvider, service, store, storage]
+
 describe('Identity Core dependency boundary', () => {
   it('contains no provider implementation imports or legacy transport fields', () => {
-    const source = [contract, model, fakeProvider, service, store, storage].join('\n')
+    const source = coreSources.join('\n')
     const forbidden = [
       'providers/taxi', 'u_' + 'id', 'u_' + 'role', 'u_' + 'details',
       'u_' + 'hash', 'auth_' + 'hash', "'/" + "auth'", "'/" + "token'",
       "'/" + "user'", "'/" + "car'", "'/" + "dropbox'",
     ]
     forbidden.forEach(value => expect(source).not.toContain(value))
+  })
+
+  it('keeps the universal ACL model free of Taxi role names and transport details', () => {
+    const source = [contract, model, service, store, storage].join('\n')
+    const forbidden = ['Client', 'Driver', 'Administrator', 'Agent', '/permissions', '/roles']
+    forbidden.forEach(value => expect(source).not.toContain(value))
+    expect(fakeProvider).not.toContain('providers/taxi')
+  })
+
+  it('keeps all Taxi ACL mapping in the Taxi adapter', () => {
+    expect(taxiMapping).toContain('taxiRoleToRole')
+    expect(taxiMapping).toContain('taxiUserToPermissions')
+    expect(taxiMapping).toContain('user.u_role')
   })
 
   it('keeps the Taxi provider independent from the legacy auth facade', () => {

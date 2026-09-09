@@ -3,10 +3,12 @@ import type {
   Credentials,
   Identity,
   ProfileUpdate,
+  Permission,
   RegistrationRequest,
   RegistrationResult,
   Session,
   SessionReference,
+  Role,
 } from '../model/identity'
 
 export class IdentityService<
@@ -37,5 +39,13 @@ export class IdentityService<
 
   remindPassword(identifier: string): Promise<void> {
     return this.provider.remindPassword(identifier)
+  }
+
+  hasRole(identity: Identity | null, role: Role): boolean {
+    return identity?.roles.includes(role) ?? false
+  }
+
+  hasPermission(identity: Identity | null, permission: Permission): boolean {
+    return identity?.permissions.includes(permission) ?? false
   }
 }

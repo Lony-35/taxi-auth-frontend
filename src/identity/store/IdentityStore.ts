@@ -4,9 +4,11 @@ import type {
   Credentials,
   Identity,
   ProfileUpdate,
+  Permission,
   RegistrationRequest,
   RegistrationResult,
   Session,
+  Role,
 } from '../model/identity'
 
 export type IdentityStoreStatus = 'idle' | 'loading' | 'authenticated' | 'error'
@@ -117,6 +119,12 @@ export class IdentityStore<
       this.emit()
     }
   }
+
+  hasRole = (role: Role): boolean => this.service.hasRole(this.state.identity, role)
+
+  hasPermission = (permission: Permission): boolean => (
+    this.service.hasPermission(this.state.identity, permission)
+  )
 
   private patch(patch: Partial<IdentityState>): void {
     this.state = { ...this.state, ...patch }

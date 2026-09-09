@@ -12,6 +12,7 @@ export interface IdentityProvider<
   TRegistration extends RegistrationRequest = RegistrationRequest,
   TProfileUpdate extends ProfileUpdate = ProfileUpdate,
 > {
+  /** Returned sessions always contain a complete Identity, including ACL state. */
   login(credentials: Credentials): Promise<Session>
   register(request: TRegistration): Promise<RegistrationResult>
   restoreSession(reference: SessionReference): Promise<Session | null>
