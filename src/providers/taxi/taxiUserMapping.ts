@@ -1,5 +1,5 @@
-import type { AuthUser } from './types'
-import { UserCheckState, UserRole } from './types'
+import type { AuthUser } from '../../auth/types'
+import { UserCheckState, UserRole } from '../../auth/types'
 
 function optionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined

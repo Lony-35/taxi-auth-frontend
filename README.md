@@ -1,127 +1,137 @@
-# Авторизация taxi — отдельный React frontend
+# Platform Identity frontend
 
-Самостоятельный React + TypeScript проект, в который вынесен существующий контур авторизации и регистрации из `taxi`. Модуль не импортирует код taxi и может подключаться к другим приложениям через `AuthService`, `AuthStore` или `AuthProvider`.
+Reusable React + TypeScript identity foundation extracted from the Taxi application.
+The repository keeps the existing Taxi authentication, registration, password recovery,
+session restore, logout and profile-editing behavior while placing it behind a
+provider-neutral Identity API.
 
-## Что перенесено
+Google, WhatsApp, ACL, invitations and a production token-security redesign are not
+part of PR-1.
 
-- двухшаговый вход через `POST /auth` → `POST /token`;
-- вход по email или телефону и обработка ответов `wrong login`, `wrong password`, `wrong phone`, `code sent`;
-- восстановление пароля через `POST /remind`;
-- регистрация клиента и водителя через `POST /register`;
-- промокод и его проверка через `GET /referral/code/:code/check`;
-- поля водителя, документы и загрузка файлов через `POST /dropbox/file`;
-- сохранение водительских деталей через `POST /user`;
-- создание автомобиля через `POST /car` и настройка лицензии через `POST /car/:id`;
-- редактирование учётных данных через `POST /user`: разные поля для клиента, водителя на проверке и активного водителя;
-- обновление аватара, водительских документов и автомобиля, загрузка автомобиля через `POST /user/authorized/car`;
-- восстановление пользователя через `POST /user/authorized`;
-- хранение пары `token` + `u_hash` и выход через `POST /logout`;
-- демо-интерфейс для всех перечисленных сценариев и mock-режим без production API.
+## Requirements and commands
 
-Google и WhatsApp намеренно не включены по согласованному ТЗ. Бизнес-страницы поездок, заказы, карты и обратное внедрение в taxi также не входят в этот репозиторий.
-
-## Запуск
-
-Требуется Node.js 20+.
+Node.js 20+ is used by the current Vite toolchain.
 
 ```bash
 cp .env.example .env
 npm install
+npm test
+npm run build
 npm run dev
 ```
 
-Проверки:
+Demo credentials in mock mode: `demo@example.com` / `demo`.
 
-```bash
-npm test
-npm run build
+## Architecture
+
+```text
+Consumer / UI
+      |
+      v
+Identity Core (model, service, store)
+      |
+      v
+IdentityProvider contract
+      |
+      +---------------------+
+      |                     |
+      v                     v
+TaxiIdentityProvider    FakeIdentityProvider
+      |
+      v
+Taxi HTTP client -> Taxi backend
 ```
 
-В mock-режиме вход выполняется с `demo@example.com` / `demo`. Существующий backend taxi не принимает пароль при регистрации: он создаёт его сам и возвращает в `string`, когда регистрация выполняется без email. Поэтому поле создания пароля в форме регистрации отсутствует намеренно.
+- `src/identity/model` — provider-neutral `Identity`, `IdentityProfile`,
+  `IdentityStatus`, `Credentials` and `Session`.
+- `src/identity/contract` — the formal `IdentityProvider` interface.
+- `src/identity/service` — provider-neutral use-case facade.
+- `src/identity/store` — state and opaque session-reference storage; it contains no
+  Taxi endpoint or DTO knowledge.
+- `src/identity/provider` — `FakeIdentityProvider`, proving that the core can run
+  without Taxi.
+- `src/providers/taxi` — the only implementation layer that knows Taxi endpoints,
+  two-step `/auth` -> `/token` login, DTO fields, driver registration, uploads,
+  cars and profile rules.
 
-## Подключение к backend
+Taxi is the current production provider, but Identity Core does not depend on it.
+The old `src/auth` exports remain as a compatibility facade for the extracted demo;
+new consumers should import the core from `src/identity` and the Taxi adapter from
+`src/providers/taxi`.
+
+Dependency direction is one-way: the core defines the contract; providers implement
+it. Identity Core never imports Taxi modules.
+
+## Public Identity API
+
+```ts
+import {
+  IdentityService,
+  IdentityStore,
+  MemorySessionStorage,
+} from './identity'
+import {
+  createAuthClient,
+  TaxiIdentityProvider,
+} from './providers/taxi'
+
+const taxiApi = createAuthClient({ baseUrl: 'https://host.example/api/v1' })
+const provider = new TaxiIdentityProvider(taxiApi)
+const service = new IdentityService(provider)
+const store = new IdentityStore(service, new MemorySessionStorage())
+
+await store.login({
+  identifier: 'user@example.com',
+  secret: 'password',
+  kind: 'email',
+})
+```
+
+Replacing Taxi with `FakeIdentityProvider` requires no change to `IdentityService`
+or `IdentityStore`.
+
+## Taxi mappings
+
+All mappings are explicit and live in `src/providers/taxi/mapping.ts`:
+
+- `taxiUserToIdentity`: Taxi user -> `Identity`;
+- `taxiProfileToIdentityProfile`: Taxi profile -> `IdentityProfile`;
+- `taxiStatusToIdentityStatus`: Taxi status -> `IdentityStatus`;
+- `taxiAuthToSession`: Taxi auth response -> `Session`;
+- `identityProfileToTaxiValues`: universal profile changes -> Taxi update values.
+
+Taxi fields such as `u_id`, `u_role`, `u_details`, `u_hash` and `auth_hash` do not
+exist in the universal model. The session reference is opaque to Identity Core and
+is encoded/decoded only by the Taxi adapter. The final production storage security
+strategy is intentionally deferred to PR-3.
+
+## Registration and profile boundaries
+
+Universal registration contains credentials and a profile. Driver documents, car
+data, phone normalization and other Taxi-specific details are represented by the
+explicit `TaxiRegistrationData` extension and are handled only by the adapter.
+
+Universal profile updates use `IdentityProfile`. Existing Taxi document, car and
+driver-specific changes are available through the explicit `TaxiProfileUpdate.taxi`
+extension. No arbitrary Taxi DTO fields are hidden inside the Identity model.
+
+## Taxi backend configuration
 
 ```env
 VITE_AUTH_API_URL=https://host.example/taxi/c/default/api/v1
 VITE_USE_MOCK_AUTH=false
-
-# Параметры нужны для сохранения поведения регистрации водителя из taxi.
 VITE_DRIVER_PHONE_PREFIX=34
 VITE_DEFAULT_COUNTRY=GHA
 VITE_DEFAULT_LOCATION_CLASS_ID=5
 ```
 
-Backend должен разрешать origin нового frontend через CORS. Параметры телефона, страны и класса локации берутся из `site_constants` исходного приложения; для отдельного проекта они передаются конфигурацией.
+The backend must allow the frontend origin through CORS.
 
-```tsx
-import { AuthProvider, createAuthClient } from './auth'
+## PR-1 verification
 
-const client = createAuthClient({
-  baseUrl: import.meta.env.VITE_AUTH_API_URL,
-  driverPhonePrefix: '34',
-  defaultCountry: 'GHA',
-  defaultLocationClassId: '5',
-})
+The test suite covers Identity/profile/status/session mappings, provider login,
+registration, restore, logout, profile updates, `IdentityStore` with a Fake Provider,
+and the existing Taxi HTTP/auth regression suite.
 
-root.render(
-  <AuthProvider client={client}>
-    <App />
-  </AuthProvider>,
-)
-```
-
-В компоненте доступны все операции:
-
-```tsx
-const {
-  state,
-  login,
-  register,
-  remindPassword,
-  checkReferralCode,
-  updateProfile,
-  getAuthorizedCars,
-  logout,
-} = useAuth()
-```
-
-`RegisterRequest` допускает дополнительные поля, поэтому server-driven форма `form_register` из taxi может передавать свой набор значений без изменения клиента.
-
-## Редактирование учётных данных
-
-После входа кнопка «Редактировать» открывает самостоятельную версию исходного `ProfileModal`. Метод `updateProfile()` сохраняет только разрешённые исходным приложением поля:
-
-- клиент — ФИО, телефон, email, язык, валюта, промокод, аватар и дополнительные данные;
-- водитель до проверки — личные данные, город, языки, описание, дата рождения, документы и автомобиль;
-- активный водитель — рабочий статус, навигация, внешняя поездка, маршрут, координаты, время, пассажиры, багаж и автомобиль;
-- заблокированный или отклонённый водитель — только те независимые операции, которые разрешал исходный экран (аватар и автомобиль).
-
-После успешного сохранения модуль повторно получает пользователя через `POST /user/authorized`, поэтому состояние интерфейса соответствует ответу backend.
-
-## Регистрация водителя
-
-Одна операция `register()` выполняет исходный pipeline:
-
-1. создаёт пользователя;
-2. сохраняет `token` и `u_hash`;
-3. загружает `passport_photo`, `driver_license_photo` и `license_photo`;
-4. записывает ID файлов и `u_details` в профиль;
-5. создаёт автомобиль;
-6. при наличии страны и класса локации назначает стандартную лицензию;
-7. получает актуального авторизованного пользователя.
-
-Модель, цвет и класс автомобиля в исходном taxi приходят из runtime-данных. Демо принимает их ID напрямую, а продуктовый интерфейс может подставить свои `select` без изменения auth-модуля.
-
-## Архитектура
-
-- `src/auth/client.ts` — API и полный auth/register pipeline;
-- `src/auth/store.ts` — состояние без Redux и saga;
-- `src/auth/context.tsx` — React Provider и hook;
-- `src/auth/storage.ts` — заменяемое хранилище токенов;
-- `src/auth/formData.ts` — совместимый legacy-формат `u_details`;
-- `src/auth/profile.ts` — правила доступных полей из исходного `ProfileModal`;
-- `src/auth/mock.ts` — автономный mock;
-- `src/ProfileEditor.tsx` — самостоятельный UI редактирования учётных данных;
-- `src/App.tsx` — демонстрационный UI.
-
-Для production безопаснее заменить `localStorage` на HttpOnly cookie, выдаваемую сервером. Интерфейс `TokenStorage` позволяет сделать это без переписывания компонентов.
+Run `npm test` and `npm run build`. The acceptance report is in
+[`docs/PR-1-REPORT.md`](docs/PR-1-REPORT.md).

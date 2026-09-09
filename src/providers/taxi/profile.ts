@@ -1,4 +1,4 @@
-import { UserCheckState, UserRole, type AuthUser } from './types'
+import { UserCheckState, UserRole, type AuthUser } from '../../auth/types'
 
 export const clientProfileFields = new Set([
   'u_role', 'u_name', 'u_family', 'u_middle', 'u_phone', 'u_email',

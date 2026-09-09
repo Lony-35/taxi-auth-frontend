@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AuthApiError } from './errors'
-import { HttpAuthClient, normalizeDriverPhone } from './client'
-import { UserCheckState, UserRole } from './types'
+import { AuthApiError } from '../../auth/errors'
+import { HttpAuthClient, normalizeDriverPhone } from './httpClient'
+import { UserCheckState, UserRole } from '../../auth/types'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
