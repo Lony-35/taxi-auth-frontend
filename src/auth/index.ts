@@ -11,14 +11,14 @@ export {
 export type { TokenStorage } from './storage'
 export { MockAuthClient } from './mock'
 export { UserCheckState, UserRole } from './types'
-export { jsonDetailsSerializer, taxiDetailsSerializer } from './formData'
+export { jsonDetailsSerializer, taxiDetailsSerializer } from '../providers/taxi/formData'
 export {
   allowedProfileFields,
   carProfileFields,
   clientProfileFields,
   driverActiveProfileFields,
   driverRequiredProfileFields,
-} from './profile'
+} from '../providers/taxi/profile'
 export type {
   AuthService,
   AuthSession,
