@@ -2,6 +2,12 @@ export type IdentityId = string
 
 export type IdentityStatus = 'ACTIVE' | 'PENDING' | 'REJECTED' | 'BLOCKED'
 
+/** Provider-defined, provider-neutral role identifier, for example `member`. */
+export type Role = string
+
+/** Provider-neutral capability identifier, for example `profile.update`. */
+export type Permission = string
+
 export interface IdentityProfile {
   name?: string
   familyName?: string
@@ -17,6 +23,8 @@ export interface Identity {
   id: IdentityId
   status: IdentityStatus
   profile: IdentityProfile
+  roles: Role[]
+  permissions: Permission[]
 }
 
 export interface Credentials {

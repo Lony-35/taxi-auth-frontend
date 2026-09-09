@@ -11,9 +11,11 @@ export type {
   IdentityId,
   IdentityProfile,
   IdentityStatus,
+  Permission,
   ProfileUpdate,
   RegistrationRequest,
   RegistrationResult,
   Session,
   SessionReference,
+  Role,
 } from './model/identity'

@@ -16,6 +16,8 @@ export {
   identityProfileToTaxiValues,
   taxiAuthToSession,
   taxiProfileToIdentityProfile,
+  taxiRoleToRole,
   taxiStatusToIdentityStatus,
+  taxiUserToPermissions,
   taxiUserToIdentity,
 } from './mapping'

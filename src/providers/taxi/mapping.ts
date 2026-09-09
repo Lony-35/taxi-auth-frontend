@@ -2,11 +2,33 @@ import type {
   Identity,
   IdentityProfile,
   IdentityStatus,
+  Permission,
+  Role,
   Session,
   SessionReference,
 } from '../../identity'
 import type { TaxiAuthSession, TaxiUser } from './types'
-import { UserCheckState } from './types'
+import { UserCheckState, UserRole } from './types'
+
+const taxiRoleMap: Readonly<Record<UserRole, Role>> = {
+  [UserRole.Client]: 'client',
+  [UserRole.Driver]: 'driver',
+  [UserRole.Administrator]: 'administrator',
+  [UserRole.Agent]: 'agent',
+}
+
+export function taxiRoleToRole(role: UserRole): Role[] {
+  const mapped = taxiRoleMap[role]
+  return mapped ? [mapped] : []
+}
+
+/**
+ * The current Taxi user contract exposes a role but no capabilities/permissions.
+ * Returning an empty set is deliberate: the adapter must not invent authorization facts.
+ */
+export function taxiUserToPermissions(_user: TaxiUser): Permission[] {
+  return []
+}
 
 export function taxiStatusToIdentityStatus(user: TaxiUser): IdentityStatus {
   switch (user.u_check_state) {
@@ -36,6 +58,8 @@ export function taxiUserToIdentity(user: TaxiUser): Identity {
     id: user.u_id,
     status: taxiStatusToIdentityStatus(user),
     profile: taxiProfileToIdentityProfile(user),
+    roles: taxiRoleToRole(user.u_role),
+    permissions: taxiUserToPermissions(user),
   }
 }
 

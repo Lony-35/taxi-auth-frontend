@@ -39,6 +39,8 @@ describe('TaxiIdentityProvider', () => {
       login: 'u@example.com', password: 'secret', type: 'e-mail',
     })
     expect(session.identity).toEqual(taxiUserToIdentity(user))
+    expect(session.identity.roles).toEqual(['client'])
+    expect(session.identity.permissions).toEqual([])
     expect(session.reference).toBe('taxi-session:login')
     expect(session.reference).not.toContain(tokens.token)
   })
@@ -55,6 +57,7 @@ describe('TaxiIdentityProvider', () => {
       u_name: 'User', u_email: 'u@example.com', u_city: 'Accra', ref_code: 'PARTNER',
     }))
     expect(result.identity?.id).toBe('1')
+    expect(result.identity?.roles).toEqual(['client'])
   })
 
   it('restores and logs out using an opaque session reference', async () => {
@@ -63,7 +66,9 @@ describe('TaxiIdentityProvider', () => {
     const reference = (await provider.login({
       identifier: 'u@example.com', secret: 'secret', kind: 'email',
     })).reference
-    await expect(provider.restoreSession(reference)).resolves.toMatchObject({ identity: { id: '1' } })
+    await expect(provider.restoreSession(reference)).resolves.toMatchObject({
+      identity: { id: '1', roles: ['client'], permissions: [] },
+    })
     await provider.logout({ identity: taxiUserToIdentity(user), reference })
     expect(api.getAuthorizedUser).toHaveBeenCalledWith(tokens)
     expect(api.logout).toHaveBeenCalledWith(tokens)

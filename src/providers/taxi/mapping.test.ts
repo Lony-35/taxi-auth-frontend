@@ -4,8 +4,10 @@ import { UserCheckState, UserRole, type TaxiUser } from './types'
 import {
   taxiAuthToSession,
   taxiProfileToIdentityProfile,
+  taxiRoleToRole,
   taxiStatusToIdentityStatus,
   taxiUserToIdentity,
+  taxiUserToPermissions,
 } from './mapping'
 
 const taxiUser: TaxiUser = {
@@ -18,7 +20,19 @@ describe('Taxi to Identity mapping', () => {
     expect(taxiUserToIdentity(taxiUser)).toEqual({
       id: '7', status: 'ACTIVE',
       profile: { name: 'Valentin', email: 'v@example.com', phone: '+123' },
+      roles: ['driver'], permissions: [],
     })
+  })
+
+  it('maps each confirmed Taxi role inside the adapter', () => {
+    expect(taxiRoleToRole(UserRole.Client)).toEqual(['client'])
+    expect(taxiRoleToRole(UserRole.Driver)).toEqual(['driver'])
+    expect(taxiRoleToRole(UserRole.Administrator)).toEqual(['administrator'])
+    expect(taxiRoleToRole(UserRole.Agent)).toEqual(['agent'])
+  })
+
+  it('does not invent permissions absent from the Taxi contract', () => {
+    expect(taxiUserToPermissions(taxiUser)).toEqual([])
   })
 
   it('maps Taxi statuses explicitly', () => {

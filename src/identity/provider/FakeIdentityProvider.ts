@@ -16,6 +16,8 @@ export class FakeIdentityProvider implements IdentityProvider {
     id: 'fake-identity',
     status: 'ACTIVE',
     profile: { name: 'Demo User', email: 'demo@example.com' },
+    roles: ['driver'],
+    permissions: ['orders.read', 'orders.accept', 'profile.read', 'profile.update'],
   }
 
   async login(credentials: Credentials): Promise<Session> {
@@ -28,6 +30,7 @@ export class FakeIdentityProvider implements IdentityProvider {
   async register(request: RegistrationRequest): Promise<RegistrationResult> {
     this.identity = {
       id: 'fake-registered', status: 'ACTIVE', profile: { ...request.profile },
+      roles: ['client'], permissions: ['profile.read', 'profile.update'],
     }
     const session = { identity: this.identity, reference: fakeReference }
     return { identity: this.identity, session }

@@ -5,8 +5,8 @@ The repository keeps the existing Taxi authentication, registration, password re
 session restore, logout and profile-editing behavior while placing it behind a
 provider-neutral Identity API.
 
-Google, WhatsApp, ACL, invitations and a production token-security redesign are not
-part of PR-1.
+Google, WhatsApp, invitations and a production token-security redesign remain out
+of scope. PR-2 adds the provider-neutral ACL model described below.
 
 ## Requirements and commands
 
@@ -91,6 +91,30 @@ await store.login({
 Replacing Taxi with `FakeIdentityProvider` requires no change to `IdentityService`
 or `IdentityStore`.
 
+## Identity ACL
+
+Every `Identity` contains complete `roles` and `permissions` arrays. A role groups
+an identity under a provider-defined access category; a permission is a stable,
+provider-neutral capability identifier such as `profile.update`. No organization,
+team, tenant or membership model is introduced because the current Taxi contract
+does not prove that such a context exists.
+
+`IdentityProvider.login()` and `restoreSession()` return ACL together with the
+identity. Consumers can use `IdentityStore.hasRole()` and
+`IdentityStore.hasPermission()` (or the equivalent `IdentityService` methods)
+without importing Taxi:
+
+```ts
+store.hasRole('driver')
+store.hasPermission('profile.update')
+```
+
+These checks are UI/UX authorization hints only. The backend remains the security
+boundary and must authorize every protected operation. Identity Core owns the
+universal model and lookup helpers; each provider owns the mapping from its access
+model. Domain business policy must not move into Identity Core without evidence
+that it is shared identity policy.
+
 ## Taxi mappings
 
 All mappings are explicit and live in `src/providers/taxi/mapping.ts`:
@@ -100,12 +124,21 @@ All mappings are explicit and live in `src/providers/taxi/mapping.ts`:
 - `taxiStatusToIdentityStatus`: Taxi status -> `IdentityStatus`;
 - `taxiAuthToSession`: Taxi auth response -> `Session`;
 - `identityProfileToTaxiValues`: universal profile changes -> Taxi update values.
+- `taxiRoleToRole`: Taxi role enum -> provider-neutral role identifier;
+- `taxiUserToPermissions`: confirmed Taxi authorization facts -> permissions.
 
 Taxi fields such as `u_id`, `u_role`, `u_details`, `u_hash` and `auth_hash` do not
 exist in the universal model. A `SessionReference` is only a random handle. Actual
 Taxi credentials live in the provider-owned `TaxiSessionVault`; they are never
 serialized into the universal reference. The default vault is in-memory and a final
 production persistence/security strategy is intentionally deferred to PR-3.
+
+The confirmed Taxi authorization source currently exposes exactly one role in
+`u_role` (`Client`, `Driver`, `Administrator` or `Agent`). The adapter maps it to
+one universal role. The supplied Taxi user/API contract exposes no permission list,
+capability claims or permission endpoint, so Taxi identities intentionally receive
+`permissions: []`. Inventing permissions from a role would turn frontend policy
+into an unsupported security claim; this is recorded as the PR-2 GAP.
 
 ## Registration and profile boundaries
 
@@ -137,3 +170,8 @@ and the existing Taxi HTTP/auth regression suite.
 
 Run `npm test` and `npm run build`. The acceptance report is in
 [`docs/PR-1-REPORT.md`](docs/PR-1-REPORT.md).
+
+## PR-2 verification
+
+The ACL acceptance report, confirmed Taxi facts and explicit GAP are in
+[`docs/PR-2-REPORT.md`](docs/PR-2-REPORT.md).
