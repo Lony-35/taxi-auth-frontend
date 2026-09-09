@@ -13,7 +13,12 @@ if (!useMock && !apiUrl) {
 
 const client = useMock
   ? new MockAuthClient()
-  : createAuthClient({ baseUrl: apiUrl })
+  : createAuthClient({
+      baseUrl: apiUrl,
+      driverPhonePrefix: import.meta.env.VITE_DRIVER_PHONE_PREFIX?.trim() || undefined,
+      defaultCountry: import.meta.env.VITE_DEFAULT_COUNTRY?.trim() || undefined,
+      defaultLocationClassId: import.meta.env.VITE_DEFAULT_LOCATION_CLASS_ID?.trim() || undefined,
+    })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

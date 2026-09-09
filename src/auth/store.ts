@@ -7,6 +7,7 @@ import type {
   LoginRequest,
   RegisterRequest,
   RegisterResult,
+  ReferralCodeResult,
 } from './types'
 
 const initialState: AuthState = {
@@ -83,6 +84,21 @@ export class AuthStore {
       this.patch({ status: 'error', error: toErrorMessage(error) })
       throw error
     }
+  }
+
+  remindPassword = async (email: string): Promise<void> => {
+    this.patch({ status: 'loading', error: null })
+    try {
+      await this.client.remindPassword(email)
+      this.patch({ status: this.state.user ? 'authenticated' : 'idle', error: null })
+    } catch (error) {
+      this.patch({ status: 'error', error: toErrorMessage(error) })
+      throw error
+    }
+  }
+
+  checkReferralCode = (code: string): Promise<ReferralCodeResult> => {
+    return this.client.checkReferralCode(code)
   }
 
   logout = async (): Promise<void> => {

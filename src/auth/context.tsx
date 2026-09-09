@@ -45,6 +45,8 @@ export function useAuth() {
     state,
     login: (request: LoginRequest): Promise<void> => context.store.login(request),
     register: (request: RegisterRequest): Promise<RegisterResult> => context.store.register(request),
+    remindPassword: (email: string): Promise<void> => context.store.remindPassword(email),
+    checkReferralCode: (code: string) => context.store.checkReferralCode(code),
     logout: (): Promise<void> => context.store.logout(),
     clearError: (): void => context.store.clearError(),
   }

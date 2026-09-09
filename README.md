@@ -1,19 +1,24 @@
-# Переиспользуемая авторизация React + TypeScript
+# Авторизация taxi — отдельный React frontend
 
-Отдельный frontend-проект, выделяющий базовые сценарии входа и регистрации из `taxi`. В первой версии намеренно нет Google, WhatsApp, водительских документов, автомобиля и внедрения обратно в исходное приложение.
+Самостоятельный React + TypeScript проект, в который вынесен существующий контур авторизации и регистрации из `taxi`. Модуль не импортирует код taxi и может подключаться к другим приложениям через `AuthService`, `AuthStore` или `AuthProvider`.
 
-## Что входит
+## Что перенесено
 
-- типизированный API-клиент для `/auth`, `/token`, `/register`, `/user/authorized`, `/logout`;
-- настраиваемые `baseUrl`, пути endpoint'ов, `fetch` и сериализация `u_details`;
-- безопасно изолированное хранение пары `token` + `u_hash`;
-- независимый от Redux store с состояниями `idle/loading/authenticated/error`;
-- `AuthProvider` и `useAuth()` для React-приложений;
-- рабочий экран входа, регистрации и профиля;
-- автономный mock-режим для демонстрации без обращения к production API;
-- тесты протокола входа, ошибок API и хранилища.
+- двухшаговый вход через `POST /auth` → `POST /token`;
+- вход по email или телефону и обработка ответов `wrong login`, `wrong password`, `wrong phone`, `code sent`;
+- восстановление пароля через `POST /remind`;
+- регистрация клиента и водителя через `POST /register`;
+- промокод и его проверка через `GET /referral/code/:code/check`;
+- поля водителя, документы и загрузка файлов через `POST /dropbox/file`;
+- сохранение водительских деталей через `POST /user`;
+- создание автомобиля через `POST /car` и настройка лицензии через `POST /car/:id`;
+- восстановление пользователя через `POST /user/authorized`;
+- хранение пары `token` + `u_hash` и выход через `POST /logout`;
+- демо-интерфейс для всех перечисленных сценариев и mock-режим без production API.
 
-## Быстрый запуск
+Google и WhatsApp намеренно не включены по согласованному ТЗ. Бизнес-страницы поездок, заказы, карты и обратное внедрение в taxi также не входят в этот репозиторий.
+
+## Запуск
 
 Требуется Node.js 20+.
 
@@ -23,8 +28,6 @@ npm install
 npm run dev
 ```
 
-По умолчанию `.env.example` включает mock-режим. В нём можно зарегистрировать любого пользователя или войти с `demo@example.com` / `demo`.
-
 Проверки:
 
 ```bash
@@ -32,18 +35,30 @@ npm test
 npm run build
 ```
 
-## Подключение к реальному backend
+В mock-режиме вход выполняется с `demo@example.com` / `demo`. Существующий backend taxi не принимает пароль при регистрации: он создаёт его сам и возвращает в `string`, когда регистрация выполняется без email. Поэтому поле создания пароля в форме регистрации отсутствует намеренно.
 
-1. Укажите `VITE_AUTH_API_URL`, например `https://host.example/taxi/c/default/api/v1`.
-2. Установите `VITE_USE_MOCK_AUTH=false`.
-3. Убедитесь, что backend разрешает origin нового приложения через CORS.
-4. Сверьте формат `u_details`. По умолчанию объект отправляется JSON-строкой; это можно переопределить через `serializeDetails`.
+## Подключение к backend
+
+```env
+VITE_AUTH_API_URL=https://host.example/taxi/c/default/api/v1
+VITE_USE_MOCK_AUTH=false
+
+# Параметры нужны для сохранения поведения регистрации водителя из taxi.
+VITE_DRIVER_PHONE_PREFIX=34
+VITE_DEFAULT_COUNTRY=GHA
+VITE_DEFAULT_LOCATION_CLASS_ID=5
+```
+
+Backend должен разрешать origin нового frontend через CORS. Параметры телефона, страны и класса локации берутся из `site_constants` исходного приложения; для отдельного проекта они передаются конфигурацией.
 
 ```tsx
 import { AuthProvider, createAuthClient } from './auth'
 
 const client = createAuthClient({
   baseUrl: import.meta.env.VITE_AUTH_API_URL,
+  driverPhonePrefix: '34',
+  defaultCountry: 'GHA',
+  defaultLocationClassId: '5',
 })
 
 root.render(
@@ -53,39 +68,43 @@ root.render(
 )
 ```
 
-В компоненте:
+В компоненте доступны все операции:
 
 ```tsx
-const { state, login, register, logout } = useAuth()
-
-await login({
-  login: 'person@example.com',
-  password: 'secret',
-  type: 'e-mail',
-})
+const {
+  state,
+  login,
+  register,
+  remindPassword,
+  checkReferralCode,
+  logout,
+} = useAuth()
 ```
 
-## Контракт исходного API
+`RegisterRequest` допускает дополнительные поля, поэтому server-driven форма `form_register` из taxi может передавать свой набор значений без изменения клиента.
 
-Клиент сохраняет совместимость с обнаруженным в `taxi` двухшаговым входом:
+## Регистрация водителя
 
-1. `POST /auth` получает `auth_hash` и `auth_user`.
-2. `POST /token` обменивает `auth_hash` на `data.token` и `data.u_hash`.
-3. Токены сохраняются под одним ключом и подставляются в защищённые запросы.
-4. При старте `POST /user/authorized` восстанавливает пользователя.
+Одна операция `register()` выполняет исходный pipeline:
 
-Ошибки `wrong login`, `wrong password`, `wrong phone` и `code sent` превращаются в типизированный `AuthApiError`, а не смешиваются с успешным ответом.
+1. создаёт пользователя;
+2. сохраняет `token` и `u_hash`;
+3. загружает `passport_photo`, `driver_license_photo` и `license_photo`;
+4. записывает ID файлов и `u_details` в профиль;
+5. создаёт автомобиль;
+6. при наличии страны и класса локации назначает стандартную лицензию;
+7. получает актуального авторизованного пользователя.
 
-Регистрация отправляет поля существующего backend: `u_name`, `u_email`, `u_phone`, `u_role`, `ref_code`, `u_details`. Для роли водителя дополнительно выставляется `st=1`, как в исходном проекте. В демонстрационной форме оставлена только базовая клиентская регистрация.
+Модель, цвет и класс автомобиля в исходном taxi приходят из runtime-данных. Демо принимает их ID напрямую, а продуктовый интерфейс может подставить свои `select` без изменения auth-модуля.
 
-## Перенос в другое приложение
+## Архитектура
 
-Скопируйте каталог `src/auth` или вынесите его в npm/workspace-пакет. UI демо не связан с модулем: приложение может заменить формы, роутинг и стили, сохранив `AuthClient`, `AuthStore`, `AuthProvider` и `TokenStorage`.
+- `src/auth/client.ts` — API и полный auth/register pipeline;
+- `src/auth/store.ts` — состояние без Redux и saga;
+- `src/auth/context.tsx` — React Provider и hook;
+- `src/auth/storage.ts` — заменяемое хранилище токенов;
+- `src/auth/formData.ts` — совместимый legacy-формат `u_details`;
+- `src/auth/mock.ts` — автономный mock;
+- `src/App.tsx` — демонстрационный UI.
 
-Рекомендуемый production-вариант — HttpOnly cookie, выдаваемая сервером. Текущее `localStorage`-хранилище сохранено ради совместимости с `taxi`, изолировано интерфейсом `TokenStorage` и может быть заменено без изменения компонентов.
-
-## Границы первого этапа
-
-- В проект не копировались связанные с такси страницы, локализация, заказы и роли приложения.
-- Google и WhatsApp не включены по согласованному ТЗ.
-- Реальные логин/регистрация не запускаются автоматически: для интеграционного теста нужны адрес окружения, CORS и тестовая учётная запись заказчика.
+Для production безопаснее заменить `localStorage` на HttpOnly cookie, выдаваемую сервером. Интерфейс `TokenStorage` позволяет сделать это без переписывания компонентов.

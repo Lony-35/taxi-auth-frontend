@@ -1,13 +1,16 @@
 import { AuthApiError } from './errors'
-import { toFormData, type DetailsSerializer, jsonDetailsSerializer } from './formData'
+import { toFormData, type DetailsSerializer, taxiDetailsSerializer } from './formData'
 import type {
   AuthService,
   AuthSession,
   AuthTokens,
   AuthUser,
+  DriverCarRequest,
   LoginRequest,
+  ReferralCodeResult,
   RegisterRequest,
   RegisterResult,
+  RegistrationUpload,
 } from './types'
 import { normalizeUser } from './userMapping'
 
@@ -22,12 +25,20 @@ interface ApiEnvelope {
   u_id?: string | number | null
   email_status?: boolean
   string?: string
+  code?: string
+  created_car?: { c_id?: string | number }
 }
 
 export interface AuthEndpoints {
   login: string
   token: string
   register: string
+  remindPassword: string
+  referralCheck: (code: string) => string
+  uploadFile: string
+  editUser: string
+  createCar: string
+  editCar: (id: string) => string
   authorizedUser: string
   logout: string
 }
@@ -37,12 +48,22 @@ export interface AuthClientOptions {
   endpoints?: Partial<AuthEndpoints>
   fetch?: typeof globalThis.fetch
   serializeDetails?: DetailsSerializer
+  fileToBase64?: (file: Blob) => Promise<string>
+  driverPhonePrefix?: string
+  defaultCountry?: string
+  defaultLocationClassId?: string
 }
 
 const defaultEndpoints: AuthEndpoints = {
   login: '/auth',
   token: '/token',
   register: '/register',
+  remindPassword: '/remind',
+  referralCheck: code => `/referral/code/${encodeURIComponent(code)}/check`,
+  uploadFile: '/dropbox/file',
+  editUser: '/user',
+  createCar: '/car',
+  editCar: id => `/car/${encodeURIComponent(id)}`,
   authorizedUser: '/user/authorized',
   logout: '/logout',
 }
@@ -83,12 +104,14 @@ export class HttpAuthClient implements AuthService {
   private readonly endpoints: AuthEndpoints
   private readonly fetcher: typeof globalThis.fetch
   private readonly serializeDetails: DetailsSerializer
+  private readonly fileToBase64: (file: Blob) => Promise<string>
 
   constructor(private readonly options: AuthClientOptions) {
     if (!options.baseUrl.trim()) throw new Error('Для AuthClient требуется baseUrl')
     this.endpoints = { ...defaultEndpoints, ...options.endpoints }
     this.fetcher = options.fetch ?? globalThis.fetch
-    this.serializeDetails = options.serializeDetails ?? jsonDetailsSerializer
+    this.serializeDetails = options.serializeDetails ?? taxiDetailsSerializer
+    this.fileToBase64 = options.fileToBase64 ?? blobToDataUrl
     if (!this.fetcher) throw new Error('В окружении отсутствует fetch')
   }
 
@@ -133,10 +156,21 @@ export class HttpAuthClient implements AuthService {
   }
 
   async register(data: RegisterRequest): Promise<RegisterResult> {
+    const {
+      uploads = [],
+      u_car: car,
+      country,
+      defaultLocationClassId,
+      ...registration
+    } = data
+    const normalizedPhone = registration.u_role === 2 && registration.u_phone
+      ? normalizeDriverPhone(registration.u_phone, this.options.driverPhonePrefix)
+      : registration.u_phone
     const envelope = await this.post(this.endpoints.register, {
-      ...data,
-      u_role: data.u_role ?? 1,
-      st: data.u_role === 2 ? 1 : undefined,
+      ...registration,
+      u_phone: normalizedPhone,
+      u_role: registration.u_role ?? 1,
+      st: registration.u_role === 2 ? 1 : undefined,
     })
     const response = nestedData(envelope)
     const error = envelope.status === 'error'
@@ -147,6 +181,36 @@ export class HttpAuthClient implements AuthService {
     const token = String(response.token ?? envelope.token ?? '')
     const userHash = String(response.u_hash ?? envelope.u_hash ?? '')
     const tokens = token && userHash ? { token, u_hash: userHash } : null
+    const id = response.u_id ?? envelope.u_id
+    const userId = id === undefined || id === null ? null : String(id)
+    const uploadedFileIds: Partial<Record<RegistrationUpload['name'], string[]>> = {}
+    let carId: string | null = null
+
+    if (registration.u_role === 2 && tokens && userId) {
+      for (const upload of uploads) {
+        const fileId = await this.uploadRegistrationFile(upload.file, userId, tokens)
+        uploadedFileIds[upload.name] = [...(uploadedFileIds[upload.name] ?? []), fileId]
+      }
+
+      if (Object.keys(uploadedFileIds).length || registration.u_details) {
+        await this.updateRegisteredDriver(
+          userId,
+          tokens,
+          registration.u_details ?? {},
+          uploadedFileIds,
+        )
+      }
+
+      if (car) {
+        carId = await this.createDriverCar(car, tokens)
+        const licenseCountry = country ?? this.options.defaultCountry
+        const locationClassId = defaultLocationClassId ?? this.options.defaultLocationClassId
+        if (carId && licenseCountry && locationClassId) {
+          await this.setDefaultCarLicense(carId, licenseCountry, locationClassId, tokens)
+        }
+      }
+    }
+
     let user: AuthUser | null = null
     if (tokens) {
       try {
@@ -156,14 +220,25 @@ export class HttpAuthClient implements AuthService {
       }
     }
 
-    const id = response.u_id ?? envelope.u_id
     return {
-      userId: id === undefined || id === null ? null : String(id),
+      userId,
       emailStatus: Boolean(response.email_status ?? envelope.email_status),
       generatedPassword: String(response.string ?? envelope.string ?? '') || null,
       tokens,
       user,
+      uploadedFileIds,
+      carId,
     }
+  }
+
+  async remindPassword(email: string): Promise<void> {
+    await this.post(this.endpoints.remindPassword, { u_email: email })
+  }
+
+  async checkReferralCode(code: string): Promise<ReferralCodeResult> {
+    const envelope = await this.request(this.endpoints.referralCheck(code), { method: 'GET' })
+    const data = nestedData(envelope)
+    return { exists: !Boolean(data.ref_code_free) }
   }
 
   async getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser> {
@@ -187,12 +262,81 @@ export class HttpAuthClient implements AuthService {
     } : {})
   }
 
+  private async uploadRegistrationFile(
+    file: Blob,
+    userId: string,
+    tokens: AuthTokens,
+  ): Promise<string> {
+    const envelope = await this.post(this.endpoints.uploadFile, {
+      ...tokens,
+      file: JSON.stringify({ base64: await this.fileToBase64(file), u_id: userId }),
+      private: 0,
+    })
+    const fileId = nestedData(envelope).dl_id
+    if (fileId === undefined || fileId === null) {
+      throw new AuthApiError('API не вернул идентификатор загруженного файла', 'protocol', {
+        details: envelope,
+      })
+    }
+    return String(fileId)
+  }
+
+  private async updateRegisteredDriver(
+    userId: string,
+    tokens: AuthTokens,
+    details: Record<string, unknown>,
+    uploadedFileIds: Partial<Record<RegistrationUpload['name'], string[]>>,
+  ): Promise<void> {
+    const mergedDetails: Record<string, unknown> = { ...details }
+    for (const [key, ids] of Object.entries(uploadedFileIds)) {
+      mergedDetails[key] = JSON.stringify(ids)
+    }
+    const legacyDetails = Object.entries(mergedDetails)
+      .map(([key, value]) => ['=', [key], value ?? ''])
+    await this.post(this.endpoints.editUser, {
+      ...tokens,
+      u_id: userId,
+      data: JSON.stringify({ u_details: legacyDetails }),
+    })
+  }
+
+  private async createDriverCar(car: DriverCarRequest, tokens: AuthTokens): Promise<string | null> {
+    const envelope = await this.post(this.endpoints.createCar, {
+      ...tokens,
+      data: JSON.stringify(car),
+    })
+    const data = nestedData(envelope)
+    const created = record(data.created_car ?? envelope.created_car)
+    const id = created.c_id
+    return id === undefined || id === null ? null : String(id)
+  }
+
+  private async setDefaultCarLicense(
+    carId: string,
+    country: string,
+    locationClassId: string,
+    tokens: AuthTokens,
+  ): Promise<void> {
+    await this.post(this.endpoints.editCar(carId), {
+      ...tokens,
+      data: JSON.stringify({
+        licenses: [{ en: 'license', b_l_c: [{ location: locationClassId, value: country }] }],
+      }),
+    })
+  }
+
   private async post(path: string, values: Record<string, unknown>): Promise<ApiEnvelope> {
+    return this.request(path, {
+      method: 'POST',
+      body: toFormData(values, this.serializeDetails),
+    })
+  }
+
+  private async request(path: string, init: RequestInit): Promise<ApiEnvelope> {
     let response: Response
     try {
       response = await this.fetcher(joinUrl(this.options.baseUrl, path), {
-        method: 'POST',
-        body: toFormData(values, this.serializeDetails),
+        ...init,
       })
     } catch (cause) {
       throw new AuthApiError('Не удалось связаться с сервером', 'network', { cause })
@@ -227,6 +371,22 @@ export class HttpAuthClient implements AuthService {
   }
 }
 
+function blobToDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export function createAuthClient(options: AuthClientOptions): AuthService {
   return new HttpAuthClient(options)
+}
+
+export function normalizeDriverPhone(phone: string, configuredPrefix?: string): string {
+  const prefix = configuredPrefix?.replace(/\D/g, '')
+  const digits = phone.replace(/\D/g, '')
+  if (!prefix || !digits.startsWith(prefix)) return phone
+  return `+11${digits.slice(prefix.length)}`
 }

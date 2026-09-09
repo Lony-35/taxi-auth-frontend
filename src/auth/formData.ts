@@ -2,9 +2,14 @@ export type DetailsSerializer = (details: Record<string, unknown>) => string
 
 export const jsonDetailsSerializer: DetailsSerializer = details => JSON.stringify(details)
 
+// taxi передаёт u_details именно в таком legacy-формате через FormData.
+export const taxiDetailsSerializer: DetailsSerializer = details => String(
+  Object.entries(details).map(([key, value]) => ['=', [key], value ?? '']),
+)
+
 export function toFormData(
   values: Record<string, unknown>,
-  serializeDetails: DetailsSerializer = jsonDetailsSerializer,
+  serializeDetails: DetailsSerializer = taxiDetailsSerializer,
 ): FormData {
   const formData = new FormData()
 

@@ -1,28 +1,35 @@
 # Карта переноса из `taxi`
 
-Документ связывает новый модуль с исходными файлами и помогает провести ревью.
-
-| Исходный код `taxi` | Новый модуль | Что изменено |
+| Исходный код | Новый модуль | Результат |
 | --- | --- | --- |
-| `src/API/auth.ts` | `src/auth/client.ts` | Вход, регистрация, token exchange и logout собраны в одном типизированном клиенте. |
-| `src/API/user.ts` | `src/auth/client.ts#getAuthorizedUser` | Оставлен только сценарий восстановления авторизованного пользователя. |
-| `src/tools/api.ts` | `src/auth/formData.ts`, `src/auth/client.ts` | Убрана зависимость API от глобального Redux store; токены передаются явно. |
-| `src/tools/convert.ts#convertUser` | `src/auth/userMapping.ts` | Оставлено только преобразование пользователя без `moment` и доменных типов такси. |
-| `src/state/user/*` | `src/auth/store.ts` | Saga/reducer заменены небольшим независимым store с теми же жизненными состояниями. |
-| `src/components/modals/LoginModal/*` | `src/App.tsx` | UI оставлен демонстрационным; его можно заменить, не меняя API и состояние. |
+| `src/API/auth.ts#login` | `src/auth/client.ts#login` | Сохранён двухшаговый `/auth` → `/token`. |
+| `src/API/auth.ts#register` | `src/auth/client.ts#register` | Клиент, водитель, `st=1`, токены и ответ с серверным паролем. |
+| `src/API/auth.ts#remindPassword` | `src/auth/client.ts#remindPassword` | Перенесён `/remind`. |
+| `src/API/auth.ts#logout` | `src/auth/client.ts#logout` | Перенесён `/logout`. |
+| `src/API/user.ts#getAuthorizedUser` | `src/auth/client.ts#getAuthorizedUser` | Восстановление сессии по `token/u_hash`. |
+| `src/API/user.ts#editUserAfterRegister` | `src/auth/client.ts#updateRegisteredDriver` | Сохранение деталей и ID документов. |
+| `src/API/index.ts#uploadFile` | `src/auth/client.ts#uploadRegistrationFile` | Base64-загрузка документов. |
+| `src/API/index.ts#checkRefCode` | `src/auth/client.ts#checkReferralCode` | Проверка промокода. |
+| `src/API/car.ts#createUserCar` | `src/auth/client.ts#createDriverCar` | Создание автомобиля водителя. |
+| `src/API/car.ts#setDefaultCarLicenses` | `src/auth/client.ts#setDefaultCarLicense` | Назначение лицензии при заданной конфигурации. |
+| `src/state/user/*` | `src/auth/store.ts` | Saga/reducer заменены независимым store. |
+| `LoginModal/Login.tsx` | `src/App.tsx` | Email/телефон, пароль, восстановление и выход. |
+| `LoginModal/Register.tsx`, `RegisterJSON.tsx` | `src/App.tsx` + `RegisterRequest` | Клиентская и водительская формы, документы, автомобиль и произвольные server-driven поля. |
 
-## Принятые границы первого этапа
+## Намеренно исключено
 
-- Вход по email/телефону и паролю.
-- Базовая регистрация клиента.
-- Пара токенов `token` + `u_hash` и восстановление сессии.
-- Google, WhatsApp, реферальные модалы, водительские документы и автомобиль не переносятся.
-- Новый модуль не импортирует код из `taxi` и может жить в отдельном репозитории.
+- Google OAuth (`googleLogin`, redirect handler и Google button);
+- WhatsApp login/signup, WA code modal и связанные состояния;
+- навигация на страницы заказов после входа;
+- доменные модули поездок, карт и заказов.
 
-## Что проверить при первом подключении backend
+## Точки интеграции
 
-1. Точный базовый URL конкретного tenant/config.
-2. CORS для origin нового приложения.
-3. Требуемый backend-формат `u_details`.
-4. Тестовые ответы `/register` для регистрации по email.
-5. Нужно ли `/logout` передавать токены или достаточно серверной cookie.
+Перед ревью на реальном окружении нужно подтвердить:
+
+1. точный `VITE_AUTH_API_URL` и CORS;
+2. префикс телефона водителя из `def_maska_tel`;
+3. страну и ID intercity location class для лицензии автомобиля;
+4. runtime-списки моделей, цветов и классов авто;
+5. обязательность водительских полей из `reg_driver`;
+6. тестовые учётные данные или отдельный backend-стенд.

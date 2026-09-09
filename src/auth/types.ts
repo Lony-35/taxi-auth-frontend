@@ -34,13 +34,33 @@ export interface LoginRequest {
   type: RegistrationType
 }
 
+export interface RegistrationUpload {
+  name: 'passport_photo' | 'driver_license_photo' | 'license_photo'
+  file: Blob
+}
+
+export interface DriverCarRequest {
+  cm_id: string
+  seats: number
+  registration_plate: string
+  color: string
+  cc_id: string
+  photo?: string
+  details?: Record<string, unknown>
+}
+
 export interface RegisterRequest {
   u_name: string
   u_email?: string
   u_phone?: string
   u_role?: UserRole
+  u_city?: string
   ref_code?: string
   u_details?: Record<string, unknown>
+  uploads?: RegistrationUpload[]
+  u_car?: DriverCarRequest
+  country?: string
+  defaultLocationClassId?: string
   [key: string]: unknown
 }
 
@@ -50,6 +70,12 @@ export interface RegisterResult {
   generatedPassword: string | null
   tokens: AuthTokens | null
   user: AuthUser | null
+  uploadedFileIds: Partial<Record<RegistrationUpload['name'], string[]>>
+  carId: string | null
+}
+
+export interface ReferralCodeResult {
+  exists: boolean
 }
 
 export interface AuthSession {
@@ -68,6 +94,8 @@ export interface AuthState {
 export interface AuthService {
   login(data: LoginRequest): Promise<AuthSession>
   register(data: RegisterRequest): Promise<RegisterResult>
+  remindPassword(email: string): Promise<void>
+  checkReferralCode(code: string): Promise<ReferralCodeResult>
   getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser>
   logout(tokens: AuthTokens | null): Promise<void>
 }

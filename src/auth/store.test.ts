@@ -21,7 +21,11 @@ function service(): AuthService {
       generatedPassword: null,
       user,
       tokens,
+      uploadedFileIds: {},
+      carId: null,
     }),
+    remindPassword: vi.fn().mockResolvedValue(undefined),
+    checkReferralCode: vi.fn().mockResolvedValue({ exists: true }),
     getAuthorizedUser: vi.fn().mockResolvedValue(user),
     logout: vi.fn().mockResolvedValue(undefined),
   }

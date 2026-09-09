@@ -7,6 +7,7 @@ import type {
   LoginRequest,
   RegisterRequest,
   RegisterResult,
+  ReferralCodeResult,
 } from './types'
 import { UserRole } from './types'
 
@@ -49,7 +50,19 @@ export class MockAuthClient implements AuthService {
       generatedPassword: null,
       tokens: demoTokens,
       user: this.user,
+      uploadedFileIds: {},
+      carId: request.u_car ? 'demo-car' : null,
     }
+  }
+
+  async remindPassword(email: string): Promise<void> {
+    await Promise.resolve()
+    if (!email.includes('@')) throw new AuthApiError('Укажите корректный email', 'unknown')
+  }
+
+  async checkReferralCode(code: string): Promise<ReferralCodeResult> {
+    await Promise.resolve()
+    return { exists: code.trim().toUpperCase() === 'TAXI2026' }
   }
 
   async getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser> {

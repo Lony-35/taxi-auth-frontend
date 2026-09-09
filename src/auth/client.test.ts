@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AuthApiError } from './errors'
-import { HttpAuthClient } from './client'
+import { HttpAuthClient, normalizeDriverPhone } from './client'
+import { UserRole } from './types'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -10,6 +11,11 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe('HttpAuthClient', () => {
+  it('нормализует телефон водителя так же, как taxi', () => {
+    expect(normalizeDriverPhone('+34 (123) 456-789', '+34')).toBe('+11123456789')
+    expect(normalizeDriverPhone('+34 (123) 456-789')).toBe('+34 (123) 456-789')
+  })
+
   it('выполняет двухшаговый вход и нормализует пользователя', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(json({
@@ -69,5 +75,68 @@ describe('HttpAuthClient', () => {
     expect(result.emailStatus).toBe(true)
     expect(result.tokens).toEqual({ token: 't', u_hash: 'h' })
     expect(result.user?.u_name).toBe('Новый')
+  })
+
+  it('поддерживает восстановление пароля и проверку промокода', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({ data: { ref_code_free: false } }))
+    const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
+
+    await client.remindPassword('user@example.com')
+    await expect(client.checkReferralCode('PARTNER')).resolves.toEqual({ exists: true })
+
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.example/remind')
+    expect((fetcher.mock.calls[0][1]?.body as FormData).get('u_email')).toBe('user@example.com')
+    expect(fetcher.mock.calls[1][0]).toBe('https://api.example/referral/code/PARTNER/check')
+    expect(fetcher.mock.calls[1][1]?.method).toBe('GET')
+  })
+
+  it('выполняет весь post-register сценарий водителя', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ data: { u_id: 9, token: 't', u_hash: 'h' } }))
+      .mockResolvedValueOnce(json({ data: { dl_id: 77 } }))
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({ data: { created_car: { c_id: 15 } } }))
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({
+        data: { user: { 9: { u_id: 9, u_name: 'Driver', u_email: 'd@example.com', u_role: 2 } } },
+      }))
+    const client = new HttpAuthClient({
+      baseUrl: 'https://api.example',
+      fetch: fetcher,
+      fileToBase64: vi.fn().mockResolvedValue('data:image/png;base64,AA=='),
+    })
+
+    const result = await client.register({
+      u_name: 'Driver',
+      u_email: 'd@example.com',
+      u_role: UserRole.Driver,
+      u_details: { street: 'Main' },
+      uploads: [{ name: 'passport_photo', file: new Blob(['x'], { type: 'image/png' }) }],
+      u_car: { cm_id: '3', seats: 4, registration_plate: 'A1', color: 'red', cc_id: '2' },
+      country: 'GHA',
+      defaultLocationClassId: '5',
+    })
+
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      'https://api.example/register',
+      'https://api.example/dropbox/file',
+      'https://api.example/user',
+      'https://api.example/car',
+      'https://api.example/car/15',
+      'https://api.example/user/authorized',
+    ])
+    expect(result.uploadedFileIds).toEqual({ passport_photo: ['77'] })
+    expect(result.carId).toBe('15')
+    expect(result.user?.u_role).toBe(UserRole.Driver)
+
+    const registerForm = fetcher.mock.calls[0][1]?.body as FormData
+    expect(registerForm.get('st')).toBe('1')
+    expect(registerForm.get('u_role')).toBe('2')
+    const uploadForm = fetcher.mock.calls[1][1]?.body as FormData
+    expect(uploadForm.get('file')).toContain('data:image/png;base64,AA==')
+    const carForm = fetcher.mock.calls[3][1]?.body as FormData
+    expect(JSON.parse(String(carForm.get('data')))).toMatchObject({ cm_id: '3', seats: 4 })
   })
 })
