@@ -1,150 +1,28 @@
+/**
+ * Legacy compatibility aliases for the extracted demo/UI. New provider code
+ * owns its DTOs in `src/providers/taxi/types.ts` and never imports this facade.
+ */
+import type { TaxiApi, TaxiAuthSession, TaxiTokens, TaxiUser } from '../providers/taxi/types'
+
+export { UserCheckState, UserRole } from '../providers/taxi/types'
+export type {
+  DriverCar, DriverCarRequest, LoginRequest, ProfileDocumentChange,
+  ProfileUpdateResult, ReferralCodeResult, RegisterRequest, RegisterResult,
+  RegistrationUpload, RegistrationType, UpdateProfileRequest,
+} from '../providers/taxi/types'
+
+export type AuthService = TaxiApi
+export type AuthSession = TaxiAuthSession
+export type AuthTokens = TaxiTokens
+export type AuthUser = TaxiUser
 export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'error'
-
-export type RegistrationType = 'e-mail' | 'phone'
-
-export enum UserRole {
-  Client = 1,
-  Driver = 2,
-  Administrator = 3,
-  Agent = 4,
-}
-
-export enum UserCheckState {
-  Required = 1,
-  Active = 2,
-  Rejected = 3,
-  Blocked = 4,
-}
-
-export interface AuthTokens {
-  token: string
-  u_hash: string
-}
-
-export interface AuthUser {
-  u_id: string
-  u_name: string
-  u_email: string
-  u_phone?: string
-  u_role: UserRole
-  u_family?: string
-  u_middle?: string
-  u_check_state?: UserCheckState
-  u_photo?: string
-  u_city?: string
-  u_lang?: string
-  u_currency?: string
-  u_lang_skills?: string
-  u_description?: string
-  u_birthday?: string
-  u_gps_software?: string
-  u_active?: boolean
-  u_phone_checked?: boolean
-  ref_code?: string
-  u_details?: Record<string, unknown>
-  [key: string]: unknown
-}
-
-export interface LoginRequest {
-  login: string
-  password?: string
-  type: RegistrationType
-}
-
-export interface RegistrationUpload {
-  name: 'passport_photo' | 'driver_license_photo' | 'license_photo'
-  file: Blob
-}
-
-export interface DriverCarRequest {
-  cm_id: string
-  seats: number
-  registration_plate: string
-  color: string
-  cc_id: string
-  photo?: string
-  details?: Record<string, unknown>
-}
-
-export interface DriverCar extends DriverCarRequest {
-  c_id: string
-  u_id?: string
-  [key: string]: unknown
-}
-
-export interface ProfileDocumentChange {
-  existingIds?: Array<string | number>
-  files?: Blob[]
-}
-
-export interface UpdateProfileRequest {
-  values: Record<string, unknown>
-  avatar?: Blob
-  documents?: Partial<Record<'passport_photo' | 'driver_license_photo', ProfileDocumentChange>>
-  car?: DriverCar
-}
-
-export interface ProfileUpdateResult {
-  user: AuthUser
-  car: DriverCar | null
-  uploadedFileIds: Partial<Record<'passport_photo' | 'driver_license_photo', string[]>>
-}
-
-export interface RegisterRequest {
-  u_name: string
-  u_email?: string
-  u_phone?: string
-  u_role?: UserRole
-  u_city?: string
-  ref_code?: string
-  u_details?: Record<string, unknown>
-  uploads?: RegistrationUpload[]
-  u_car?: DriverCarRequest
-  country?: string
-  defaultLocationClassId?: string
-  [key: string]: unknown
-}
-
-export interface RegisterResult {
-  userId: string | null
-  emailStatus: boolean
-  generatedPassword: string | null
-  tokens: AuthTokens | null
-  user: AuthUser | null
-  uploadedFileIds: Partial<Record<RegistrationUpload['name'], string[]>>
-  carId: string | null
-}
-
-export interface ReferralCodeResult {
-  exists: boolean
-}
-
-export interface AuthSession {
-  user: AuthUser
-  tokens: AuthTokens
-}
 
 export interface AuthState {
   status: AuthStatus
   user: AuthUser | null
   tokens: AuthTokens | null
   error: string | null
-  registration: RegisterResult | null
-}
-
-export interface AuthService {
-  login(data: LoginRequest): Promise<AuthSession>
-  register(data: RegisterRequest): Promise<RegisterResult>
-  remindPassword(email: string): Promise<void>
-  checkReferralCode(code: string): Promise<ReferralCodeResult>
-  updateProfile(
-    currentUser: AuthUser,
-    data: UpdateProfileRequest,
-    tokens: AuthTokens,
-  ): Promise<ProfileUpdateResult>
-  getAuthorizedCars(tokens: AuthTokens): Promise<DriverCar[]>
-  getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser>
-  logout(tokens: AuthTokens | null): Promise<void>
+  registration: import('../providers/taxi/types').RegisterResult | null
 }
 
 export type AuthListener = () => void

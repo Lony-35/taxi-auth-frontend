@@ -1,4 +1,4 @@
-import { UserCheckState, UserRole, type AuthUser } from '../../auth/types'
+import { UserCheckState, UserRole, type TaxiUser } from './types'
 
 export const clientProfileFields = new Set([
   'u_role', 'u_name', 'u_family', 'u_middle', 'u_phone', 'u_email',
@@ -23,7 +23,7 @@ export const carProfileFields = new Set([
   'cm_id', 'seats', 'registration_plate', 'color', 'photo', 'details', 'cc_id',
 ])
 
-export function allowedProfileFields(user: AuthUser): Set<string> {
+export function allowedProfileFields(user: TaxiUser): Set<string> {
   if (user.u_role === UserRole.Client) return clientProfileFields
   if (user.u_role !== UserRole.Driver) return new Set()
   if (!user.u_check_state || user.u_check_state === UserCheckState.Required) {

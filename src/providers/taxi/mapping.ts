@@ -5,10 +5,10 @@ import type {
   Session,
   SessionReference,
 } from '../../identity'
-import type { AuthSession, AuthTokens, AuthUser } from '../../auth/types'
-import { UserCheckState } from '../../auth/types'
+import type { TaxiAuthSession, TaxiUser } from './types'
+import { UserCheckState } from './types'
 
-export function taxiStatusToIdentityStatus(user: AuthUser): IdentityStatus {
+export function taxiStatusToIdentityStatus(user: TaxiUser): IdentityStatus {
   switch (user.u_check_state) {
     case UserCheckState.Active: return 'ACTIVE'
     case UserCheckState.Rejected: return 'REJECTED'
@@ -18,7 +18,7 @@ export function taxiStatusToIdentityStatus(user: AuthUser): IdentityStatus {
   }
 }
 
-export function taxiProfileToIdentityProfile(user: AuthUser): IdentityProfile {
+export function taxiProfileToIdentityProfile(user: TaxiUser): IdentityProfile {
   return {
     name: user.u_name || undefined,
     familyName: user.u_family || undefined,
@@ -31,7 +31,7 @@ export function taxiProfileToIdentityProfile(user: AuthUser): IdentityProfile {
   }
 }
 
-export function taxiUserToIdentity(user: AuthUser): Identity {
+export function taxiUserToIdentity(user: TaxiUser): Identity {
   return {
     id: user.u_id,
     status: taxiStatusToIdentityStatus(user),
@@ -39,22 +39,10 @@ export function taxiUserToIdentity(user: AuthUser): Identity {
   }
 }
 
-export function taxiTokensToSessionReference(tokens: AuthTokens): SessionReference {
-  return JSON.stringify([tokens.token, tokens.u_hash]) as SessionReference
-}
-
-export function sessionReferenceToTaxiTokens(reference: SessionReference): AuthTokens {
-  const parsed: unknown = JSON.parse(reference)
-  if (!Array.isArray(parsed) || parsed.length !== 2 || parsed.some(value => typeof value !== 'string')) {
-    throw new Error('Invalid Taxi session reference')
-  }
-  return { token: parsed[0], u_hash: parsed[1] }
-}
-
-export function taxiAuthToSession(auth: AuthSession): Session {
+export function taxiAuthToSession(auth: TaxiAuthSession, reference: SessionReference): Session {
   return {
     identity: taxiUserToIdentity(auth.user),
-    reference: taxiTokensToSessionReference(auth.tokens),
+    reference,
   }
 }
 

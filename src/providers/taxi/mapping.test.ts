@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { UserCheckState, UserRole, type AuthUser } from '../../auth/types'
+import type { SessionReference } from '../../identity'
+import { UserCheckState, UserRole, type TaxiUser } from './types'
 import {
-  sessionReferenceToTaxiTokens,
   taxiAuthToSession,
   taxiProfileToIdentityProfile,
   taxiStatusToIdentityStatus,
-  taxiTokensToSessionReference,
   taxiUserToIdentity,
 } from './mapping'
 
-const taxiUser: AuthUser = {
+const taxiUser: TaxiUser = {
   u_id: '7', u_name: 'Valentin', u_email: 'v@example.com',
   u_phone: '+123', u_role: UserRole.Driver, u_check_state: UserCheckState.Active,
 }
@@ -35,11 +34,12 @@ describe('Taxi to Identity mapping', () => {
     expect(profile).not.toHaveProperty('u_details')
   })
 
-  it('maps Taxi auth to an opaque universal Session', () => {
+  it('maps Taxi auth using a provider-owned session handle', () => {
     const tokens = { token: 'token', u_hash: 'hash' }
-    const session = taxiAuthToSession({ user: taxiUser, tokens })
+    const reference = 'taxi-session:test' as SessionReference
+    const session = taxiAuthToSession({ user: taxiUser, tokens }, reference)
     expect(session.identity.id).toBe('7')
-    expect(sessionReferenceToTaxiTokens(session.reference)).toEqual(tokens)
-    expect(session.reference).toBe(taxiTokensToSessionReference(tokens))
+    expect(session.reference).toBe(reference)
+    expect(session.reference).not.toContain(tokens.token)
   })
 })

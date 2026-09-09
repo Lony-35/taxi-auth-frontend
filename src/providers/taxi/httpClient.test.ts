@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AuthApiError } from '../../auth/errors'
+import { TaxiApiError } from './errors'
 import { HttpAuthClient, normalizeDriverPhone } from './httpClient'
-import { UserCheckState, UserRole } from '../../auth/types'
+import { UserCheckState, UserRole } from './types'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,7 +56,7 @@ describe('HttpAuthClient', () => {
     const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
 
     await expect(client.login({ login: 'x', password: 'bad', type: 'e-mail' }))
-      .rejects.toMatchObject({ code: 'wrong_password' } satisfies Partial<AuthApiError>)
+      .rejects.toMatchObject({ code: 'wrong_password' } satisfies Partial<TaxiApiError>)
   })
 
   it('возвращает данные регистрации и восстанавливает пользователя по токенам', async () => {

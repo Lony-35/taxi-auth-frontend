@@ -10,25 +10,6 @@ export {
 } from './storage'
 export type { TokenStorage } from './storage'
 export { MockAuthClient } from './mock'
-export {
-  IdentityService,
-  IdentityStore,
-  MemorySessionStorage,
-  FakeIdentityProvider,
-} from '../identity'
-export type {
-  Credentials,
-  Identity,
-  IdentityId,
-  IdentityProfile,
-  IdentityStatus,
-  ProfileUpdate,
-  RegistrationRequest,
-  RegistrationResult,
-  Session,
-  SessionReference,
-} from '../identity'
-export { TaxiIdentityProvider } from '../providers/taxi'
 export { UserCheckState, UserRole } from './types'
 export { jsonDetailsSerializer, taxiDetailsSerializer } from '../providers/taxi/formData'
 export {

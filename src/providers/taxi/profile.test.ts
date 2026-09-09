@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { allowedProfileFields, filterFields } from './profile'
-import { UserCheckState, UserRole, type AuthUser } from '../../auth/types'
+import { UserCheckState, UserRole, type TaxiUser } from './types'
 
-const baseUser: AuthUser = {
+const baseUser: TaxiUser = {
   u_id: '1', u_name: 'User', u_email: 'u@example.com', u_role: UserRole.Client,
 }
 

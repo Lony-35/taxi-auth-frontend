@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AuthService, AuthTokens, AuthUser } from '../../auth/types'
-import { UserRole } from '../../auth/types'
+import type { TaxiApi, TaxiTokens, TaxiUser } from './types'
+import { UserRole } from './types'
 import { TaxiIdentityProvider } from './TaxiIdentityProvider'
-import { taxiTokensToSessionReference, taxiUserToIdentity } from './mapping'
+import { taxiUserToIdentity } from './mapping'
+import { MemoryTaxiSessionVault } from './sessionVault'
 
-const user: AuthUser = {
+const user: TaxiUser = {
   u_id: '1', u_name: 'User', u_email: 'u@example.com', u_role: UserRole.Client,
 }
-const tokens: AuthTokens = { token: 'token', u_hash: 'hash' }
+const tokens: TaxiTokens = { token: 'token', u_hash: 'hash' }
 
-function taxiApi(): AuthService {
+function taxiApi(): TaxiApi {
   return {
     login: vi.fn().mockResolvedValue({ user, tokens }),
     register: vi.fn().mockResolvedValue({
@@ -30,7 +31,7 @@ function taxiApi(): AuthService {
 describe('TaxiIdentityProvider', () => {
   it('hides two-step Taxi login behind the provider contract', async () => {
     const api = taxiApi()
-    const provider = new TaxiIdentityProvider(api)
+    const provider = new TaxiIdentityProvider(api, new MemoryTaxiSessionVault(() => 'login'))
     const session = await provider.login({
       identifier: 'u@example.com', secret: 'secret', kind: 'email',
     })
@@ -38,11 +39,13 @@ describe('TaxiIdentityProvider', () => {
       login: 'u@example.com', password: 'secret', type: 'e-mail',
     })
     expect(session.identity).toEqual(taxiUserToIdentity(user))
+    expect(session.reference).toBe('taxi-session:login')
+    expect(session.reference).not.toContain(tokens.token)
   })
 
   it('maps universal registration to explicit Taxi registration data', async () => {
     const api = taxiApi()
-    const provider = new TaxiIdentityProvider(api)
+    const provider = new TaxiIdentityProvider(api, new MemoryTaxiSessionVault(() => 'register'))
     const result = await provider.register({
       credentials: { identifier: 'u@example.com', kind: 'email' },
       profile: { name: 'User', email: 'u@example.com', city: 'Accra' },
@@ -56,8 +59,10 @@ describe('TaxiIdentityProvider', () => {
 
   it('restores and logs out using an opaque session reference', async () => {
     const api = taxiApi()
-    const provider = new TaxiIdentityProvider(api)
-    const reference = taxiTokensToSessionReference(tokens)
+    const provider = new TaxiIdentityProvider(api, new MemoryTaxiSessionVault(() => 'restore'))
+    const reference = (await provider.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })).reference
     await expect(provider.restoreSession(reference)).resolves.toMatchObject({ identity: { id: '1' } })
     await provider.logout({ identity: taxiUserToIdentity(user), reference })
     expect(api.getAuthorizedUser).toHaveBeenCalledWith(tokens)
@@ -66,8 +71,10 @@ describe('TaxiIdentityProvider', () => {
 
   it('maps universal profile changes through Taxi API', async () => {
     const api = taxiApi()
-    const provider = new TaxiIdentityProvider(api)
-    const session = { identity: taxiUserToIdentity(user), reference: taxiTokensToSessionReference(tokens) }
+    const provider = new TaxiIdentityProvider(api, new MemoryTaxiSessionVault(() => 'profile'))
+    const session = await provider.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
     await expect(provider.updateProfile(session.identity, {
       profile: { name: 'Updated' },
     }, session)).resolves.toMatchObject({ profile: { name: 'Updated' } })

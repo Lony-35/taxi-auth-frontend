@@ -1,5 +1,5 @@
-import type { AuthUser } from '../../auth/types'
-import { UserCheckState, UserRole } from '../../auth/types'
+import type { TaxiUser } from './types'
+import { UserCheckState, UserRole } from './types'
 
 function optionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined
@@ -25,7 +25,7 @@ function details(value: unknown): Record<string, unknown> | undefined {
   return undefined
 }
 
-export function normalizeUser(value: unknown): AuthUser {
+export function normalizeUser(value: unknown): TaxiUser {
   if (!value || typeof value !== 'object') throw new Error('Невалидный пользователь')
   const raw = value as Record<string, unknown>
   const id = raw.u_id

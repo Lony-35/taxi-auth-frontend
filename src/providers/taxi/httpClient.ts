@@ -1,10 +1,10 @@
-import { AuthApiError } from '../../auth/errors'
+import { TaxiApiError } from './errors'
 import { toFormData, type DetailsSerializer, taxiDetailsSerializer } from './formData'
 import type {
-  AuthService,
-  AuthSession,
-  AuthTokens,
-  AuthUser,
+  TaxiApi,
+  TaxiAuthSession,
+  TaxiTokens,
+  TaxiUser,
   DriverCar,
   DriverCarRequest,
   LoginRequest,
@@ -14,7 +14,7 @@ import type {
   RegisterResult,
   RegistrationUpload,
   UpdateProfileRequest,
-} from '../../auth/types'
+} from './types'
 import { normalizeUser } from './taxiUserMapping'
 import { allowedProfileFields, carProfileFields, filterFields, toLegacyDetails } from './profile'
 
@@ -88,7 +88,7 @@ function getMessage(envelope: ApiEnvelope): string | null {
   return null
 }
 
-function messageToError(message: string, details?: unknown): AuthApiError {
+function messageToError(message: string, details?: unknown): TaxiApiError {
   const normalized = message.toLowerCase().trim()
   const map = {
     'wrong login': ['Неверный логин', 'wrong_login'],
@@ -99,15 +99,15 @@ function messageToError(message: string, details?: unknown): AuthApiError {
   } as const
   const known = map[normalized as keyof typeof map]
   return known
-    ? new AuthApiError(known[0], known[1], { details })
-    : new AuthApiError(message || 'Ошибка API авторизации', 'unknown', { details })
+    ? new TaxiApiError(known[0], known[1], { details })
+    : new TaxiApiError(message || 'Ошибка API авторизации', 'unknown', { details })
 }
 
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 }
 
-export class HttpAuthClient implements AuthService {
+export class HttpAuthClient implements TaxiApi {
   private readonly endpoints: AuthEndpoints
   private readonly fetcher: typeof globalThis.fetch
   private readonly serializeDetails: DetailsSerializer
@@ -122,7 +122,7 @@ export class HttpAuthClient implements AuthService {
     if (!this.fetcher) throw new Error('В окружении отсутствует fetch')
   }
 
-  async login(data: LoginRequest): Promise<AuthSession> {
+  async login(data: LoginRequest): Promise<TaxiAuthSession> {
     const auth = await this.post(this.endpoints.login, {
       ...data,
       au: 'f',
@@ -134,7 +134,7 @@ export class HttpAuthClient implements AuthService {
       throw messageToError(authMessage, auth)
     }
     if (!auth.auth_hash) {
-      throw new AuthApiError('API не вернул auth_hash', 'protocol', { details: auth })
+      throw new TaxiApiError('API не вернул auth_hash', 'protocol', { details: auth })
     }
 
     const tokenEnvelope = await this.post(this.endpoints.token, {
@@ -144,14 +144,14 @@ export class HttpAuthClient implements AuthService {
     const token = String(tokenData.token ?? tokenEnvelope.token ?? '')
     const userHash = String(tokenData.u_hash ?? tokenEnvelope.u_hash ?? '')
     if (!token || !userHash) {
-      throw new AuthApiError('API не вернул token и u_hash', 'protocol', {
+      throw new TaxiApiError('API не вернул token и u_hash', 'protocol', {
         details: tokenEnvelope,
       })
     }
 
     const rawUser = auth.auth_user ?? tokenEnvelope.auth_user
     if (!rawUser) {
-      throw new AuthApiError('API не вернул пользователя после входа', 'protocol', {
+      throw new TaxiApiError('API не вернул пользователя после входа', 'protocol', {
         details: auth,
       })
     }
@@ -218,7 +218,7 @@ export class HttpAuthClient implements AuthService {
       }
     }
 
-    let user: AuthUser | null = null
+    let user: TaxiUser | null = null
     if (tokens) {
       try {
         user = await this.getAuthorizedUser(tokens)
@@ -249,14 +249,14 @@ export class HttpAuthClient implements AuthService {
   }
 
   async updateProfile(
-    currentUser: AuthUser,
+    currentUser: TaxiUser,
     data: UpdateProfileRequest,
-    tokens: AuthTokens,
+    tokens: TaxiTokens,
   ): Promise<ProfileUpdateResult> {
     if (data.values.ref_code && data.values.ref_code !== currentUser.ref_code) {
       const referral = await this.checkReferralCode(String(data.values.ref_code))
       if (!referral.exists) {
-        throw new AuthApiError('Промокод не найден', 'unknown')
+        throw new TaxiApiError('Промокод не найден', 'unknown')
       }
     }
 
@@ -300,7 +300,7 @@ export class HttpAuthClient implements AuthService {
     }
   }
 
-  async getAuthorizedCars(tokens: AuthTokens): Promise<DriverCar[]> {
+  async getAuthorizedCars(tokens: TaxiTokens): Promise<DriverCar[]> {
     const envelope = await this.post(this.endpoints.authorizedCars, { ...tokens })
     const cars = record(nestedData(envelope).car)
     return Object.values(cars).map(raw => {
@@ -317,7 +317,7 @@ export class HttpAuthClient implements AuthService {
     })
   }
 
-  async getAuthorizedUser(tokens: AuthTokens): Promise<AuthUser> {
+  async getAuthorizedUser(tokens: TaxiTokens): Promise<TaxiUser> {
     const envelope = await this.post(this.endpoints.authorizedUser, {
       token: tokens.token,
       u_hash: tokens.u_hash,
@@ -326,12 +326,12 @@ export class HttpAuthClient implements AuthService {
     const users = record(data.user)
     const rawUser = Object.values(users)[0] ?? envelope.auth_user
     if (!rawUser) {
-      throw new AuthApiError('Сессия недействительна', 'unauthorized', { details: envelope })
+      throw new TaxiApiError('Сессия недействительна', 'unauthorized', { details: envelope })
     }
     return normalizeUser(rawUser)
   }
 
-  async logout(tokens: AuthTokens | null): Promise<void> {
+  async logout(tokens: TaxiTokens | null): Promise<void> {
     await this.post(this.endpoints.logout, tokens ? {
       token: tokens.token,
       u_hash: tokens.u_hash,
@@ -341,7 +341,7 @@ export class HttpAuthClient implements AuthService {
   private async uploadRegistrationFile(
     file: Blob,
     userId: string,
-    tokens: AuthTokens,
+    tokens: TaxiTokens,
   ): Promise<string> {
     const envelope = await this.post(this.endpoints.uploadFile, {
       ...tokens,
@@ -350,7 +350,7 @@ export class HttpAuthClient implements AuthService {
     })
     const fileId = nestedData(envelope).dl_id
     if (fileId === undefined || fileId === null) {
-      throw new AuthApiError('API не вернул идентификатор загруженного файла', 'protocol', {
+      throw new TaxiApiError('API не вернул идентификатор загруженного файла', 'protocol', {
         details: envelope,
       })
     }
@@ -359,7 +359,7 @@ export class HttpAuthClient implements AuthService {
 
   private async updateRegisteredDriver(
     userId: string,
-    tokens: AuthTokens,
+    tokens: TaxiTokens,
     details: Record<string, unknown>,
     uploadedFileIds: Partial<Record<RegistrationUpload['name'], string[]>>,
   ): Promise<void> {
@@ -375,7 +375,7 @@ export class HttpAuthClient implements AuthService {
     })
   }
 
-  private async editUser(values: Record<string, unknown>, tokens: AuthTokens): Promise<void> {
+  private async editUser(values: Record<string, unknown>, tokens: TaxiTokens): Promise<void> {
     const { u_city, u_details, ...userData } = values
     await this.post(this.endpoints.editUser, {
       ...tokens,
@@ -389,7 +389,7 @@ export class HttpAuthClient implements AuthService {
     })
   }
 
-  private async createDriverCar(car: DriverCarRequest, tokens: AuthTokens): Promise<string | null> {
+  private async createDriverCar(car: DriverCarRequest, tokens: TaxiTokens): Promise<string | null> {
     const envelope = await this.post(this.endpoints.createCar, {
       ...tokens,
       data: JSON.stringify(car),
@@ -404,7 +404,7 @@ export class HttpAuthClient implements AuthService {
     carId: string,
     country: string,
     locationClassId: string,
-    tokens: AuthTokens,
+    tokens: TaxiTokens,
   ): Promise<void> {
     await this.post(this.endpoints.editCar(carId), {
       ...tokens,
@@ -428,21 +428,21 @@ export class HttpAuthClient implements AuthService {
         ...init,
       })
     } catch (cause) {
-      throw new AuthApiError('Не удалось связаться с сервером', 'network', { cause })
+      throw new TaxiApiError('Не удалось связаться с сервером', 'network', { cause })
     }
 
     let payload: unknown
     try {
       payload = await response.json()
     } catch (cause) {
-      throw new AuthApiError('Сервер вернул невалидный JSON', 'protocol', {
+      throw new TaxiApiError('Сервер вернул невалидный JSON', 'protocol', {
         status: response.status,
         cause,
       })
     }
 
     if (!response.ok) {
-      throw new AuthApiError(
+      throw new TaxiApiError(
         String(record(payload).message ?? `HTTP ${response.status}`),
         response.status === 401 ? 'unauthorized' : 'unknown',
         { status: response.status, details: payload },
@@ -469,7 +469,7 @@ function blobToDataUrl(file: Blob): Promise<string> {
   })
 }
 
-export function createAuthClient(options: AuthClientOptions): AuthService {
+export function createAuthClient(options: AuthClientOptions): TaxiApi {
   return new HttpAuthClient(options)
 }
 

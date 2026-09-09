@@ -9,20 +9,20 @@ import type {
   SessionReference,
 } from '../../identity'
 import type {
-  AuthService,
   DriverCar,
   DriverCarRequest,
   RegistrationUpload,
+  TaxiApi,
+  TaxiTokens,
   UpdateProfileRequest,
-} from '../../auth/types'
-import { UserRole } from '../../auth/types'
+} from './types'
+import { UserRole } from './types'
 import {
   identityProfileToTaxiValues,
-  sessionReferenceToTaxiTokens,
   taxiAuthToSession,
-  taxiTokensToSessionReference,
   taxiUserToIdentity,
 } from './mapping'
+import { MemoryTaxiSessionVault, type TaxiSessionVault } from './sessionVault'
 
 export interface TaxiRegistrationData {
   role?: UserRole
@@ -49,7 +49,10 @@ export interface TaxiProfileUpdate extends ProfileUpdate {
  */
 export class TaxiIdentityProvider
 implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
-  constructor(private readonly taxiApi: AuthService) {}
+  constructor(
+    private readonly taxiApi: TaxiApi,
+    private readonly sessions: TaxiSessionVault = new MemoryTaxiSessionVault(),
+  ) {}
 
   async login(credentials: Credentials): Promise<Session> {
     const result = await this.taxiApi.login({
@@ -57,7 +60,7 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
       password: credentials.secret,
       type: credentials.kind === 'phone' ? 'phone' : 'e-mail',
     })
-    return taxiAuthToSession(result)
+    return taxiAuthToSession(result, this.sessions.create(result.tokens))
   }
 
   async register(request: TaxiRegistrationRequest): Promise<RegistrationResult> {
@@ -77,13 +80,14 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     })
     const identity = result.user ? taxiUserToIdentity(result.user) : null
     const session: Session | null = identity && result.tokens
-      ? { identity, reference: taxiTokensToSessionReference(result.tokens) }
+      ? { identity, reference: this.sessions.create(result.tokens) }
       : null
     return { identity, session }
   }
 
   async restoreSession(reference: SessionReference): Promise<Session | null> {
-    const tokens = sessionReferenceToTaxiTokens(reference)
+    const tokens = this.sessions.read(reference)
+    if (!tokens) return null
     const user = await this.taxiApi.getAuthorizedUser(tokens)
     return { identity: taxiUserToIdentity(user), reference }
   }
@@ -93,7 +97,7 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     update: TaxiProfileUpdate,
     session: Session,
   ): Promise<Identity> {
-    const tokens = sessionReferenceToTaxiTokens(session.reference)
+    const tokens = this.requireTokens(session.reference)
     const currentUser = await this.taxiApi.getAuthorizedUser(tokens)
     if (currentUser.u_id !== identity.id) throw new Error('Taxi identity mismatch')
     const result = await this.taxiApi.updateProfile(currentUser, {
@@ -104,9 +108,13 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
   }
 
   async logout(session: Session | null): Promise<void> {
-    await this.taxiApi.logout(session
-      ? sessionReferenceToTaxiTokens(session.reference)
-      : null)
+    const reference = session?.reference
+    const tokens = reference ? this.sessions.read(reference) : null
+    try {
+      await this.taxiApi.logout(tokens)
+    } finally {
+      if (reference) this.sessions.delete(reference)
+    }
   }
 
   remindPassword(identifier: string): Promise<void> {
@@ -118,6 +126,12 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
   }
 
   getAuthorizedCars(session: Session): Promise<DriverCar[]> {
-    return this.taxiApi.getAuthorizedCars(sessionReferenceToTaxiTokens(session.reference))
+    return this.taxiApi.getAuthorizedCars(this.requireTokens(session.reference))
+  }
+
+  private requireTokens(reference: SessionReference): TaxiTokens {
+    const tokens = this.sessions.read(reference)
+    if (!tokens) throw new Error('Taxi session reference is unknown or expired')
+    return tokens
   }
 }

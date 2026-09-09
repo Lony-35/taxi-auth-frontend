@@ -46,8 +46,8 @@ Taxi HTTP client -> Taxi backend
   `IdentityStatus`, `Credentials` and `Session`.
 - `src/identity/contract` — the formal `IdentityProvider` interface.
 - `src/identity/service` — provider-neutral use-case facade.
-- `src/identity/store` — state and opaque session-reference storage; it contains no
-  Taxi endpoint or DTO knowledge.
+- `src/identity/store` — state and opaque handle storage; it contains no Taxi
+  credentials, endpoint or DTO knowledge.
 - `src/identity/provider` — `FakeIdentityProvider`, proving that the core can run
   without Taxi.
 - `src/providers/taxi` — the only implementation layer that knows Taxi endpoints,
@@ -55,9 +55,10 @@ Taxi HTTP client -> Taxi backend
   cars and profile rules.
 
 Taxi is the current production provider, but Identity Core does not depend on it.
-The old `src/auth` exports remain as a compatibility facade for the extracted demo;
-new consumers should import the core from `src/identity` and the Taxi adapter from
-`src/providers/taxi`.
+The old `src/auth` surface remains only as a legacy compatibility boundary for the
+extracted demo/UI. It does not export the new Identity API and is not an integration
+entry point. New consumers must import the core from `src/identity` and a provider
+from `src/providers/*`.
 
 Dependency direction is one-way: the core defines the contract; providers implement
 it. Identity Core never imports Taxi modules.
@@ -101,9 +102,10 @@ All mappings are explicit and live in `src/providers/taxi/mapping.ts`:
 - `identityProfileToTaxiValues`: universal profile changes -> Taxi update values.
 
 Taxi fields such as `u_id`, `u_role`, `u_details`, `u_hash` and `auth_hash` do not
-exist in the universal model. The session reference is opaque to Identity Core and
-is encoded/decoded only by the Taxi adapter. The final production storage security
-strategy is intentionally deferred to PR-3.
+exist in the universal model. A `SessionReference` is only a random handle. Actual
+Taxi credentials live in the provider-owned `TaxiSessionVault`; they are never
+serialized into the universal reference. The default vault is in-memory and a final
+production persistence/security strategy is intentionally deferred to PR-3.
 
 ## Registration and profile boundaries
 
