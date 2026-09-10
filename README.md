@@ -5,8 +5,10 @@ The repository keeps the existing Taxi authentication, registration, password re
 session restore, logout and profile-editing behavior while placing it behind a
 provider-neutral Identity API.
 
-Google, WhatsApp, invitations and a production token-security redesign remain out
-of scope. PR-2 adds the provider-neutral ACL model described below.
+Google, WhatsApp and invitations remain out of scope. PR-3 adds durable opaque
+session-reference storage, explicit lifecycle failures and a documented provider
+credential boundary. The current Taxi backend still needs the contract described
+below before credentials can be restored securely after a full page reload.
 
 ## Requirements and commands
 
@@ -69,7 +71,7 @@ it. Identity Core never imports Taxi modules.
 import {
   IdentityService,
   IdentityStore,
-  MemorySessionStorage,
+  PersistentSessionStorage,
 } from './identity'
 import {
   createAuthClient,
@@ -79,7 +81,7 @@ import {
 const taxiApi = createAuthClient({ baseUrl: 'https://host.example/api/v1' })
 const provider = new TaxiIdentityProvider(taxiApi)
 const service = new IdentityService(provider)
-const store = new IdentityStore(service, new MemorySessionStorage())
+const store = new IdentityStore(service, new PersistentSessionStorage(window.localStorage))
 
 await store.login({
   identifier: 'user@example.com',
@@ -130,8 +132,29 @@ All mappings are explicit and live in `src/providers/taxi/mapping.ts`:
 Taxi fields such as `u_id`, `u_role`, `u_details`, `u_hash` and `auth_hash` do not
 exist in the universal model. A `SessionReference` is only a random handle. Actual
 Taxi credentials live in the provider-owned `TaxiSessionVault`; they are never
-serialized into the universal reference. The default vault is in-memory and a final
-production persistence/security strategy is intentionally deferred to PR-3.
+serialized into the universal reference. The default vault is deliberately
+in-memory. Browser persistence contains only the opaque `SessionReference`; it
+never contains Taxi bearer credentials.
+
+## Session lifecycle and production security
+
+`PersistentSessionStorage` accepts the browser `localStorage` API (or another
+`KeyValueStorage`) and survives store/application recreation. It stores one opaque
+reference and never parses or serializes credentials. `IdentityStore.sessionError`
+distinguishes `NO_SESSION`, `INVALID_REFERENCE`, `EXPIRED_SESSION`,
+`INVALID_PROVIDER_CREDENTIALS`, `RESTORE_FAILED` and `LOGOUT_FAILED`. Failed
+restore clears stale local state. Logout clears provider credentials and then the
+reference, even when the remote logout request fails.
+
+An opaque reference is not an authorization boundary by itself. XSS can steal a
+value stored in `localStorage`, and persisting the current Taxi bearer credentials
+there would expose them directly. The supplied Taxi API has no secure browser
+session mechanism, so `MemoryTaxiSessionVault` intentionally does not claim to
+survive a page reload. Production reload restore requires a backend-owned session:
+a Secure, HttpOnly, SameSite cookie (or an equivalent server-held session), a
+credential-free restore endpoint, server-side expiry/revocation and idempotent
+logout. See [`docs/PR-3-REPORT.md`](docs/PR-3-REPORT.md) for the full threat model,
+GAP and minimum contract.
 
 The confirmed Taxi authorization source currently exposes exactly one role in
 `u_role` (`Client`, `Driver`, `Administrator` or `Agent`). The adapter maps it to
@@ -175,3 +198,8 @@ Run `npm test` and `npm run build`. The acceptance report is in
 
 The ACL acceptance report, confirmed Taxi facts and explicit GAP are in
 [`docs/PR-2-REPORT.md`](docs/PR-2-REPORT.md).
+
+## PR-3 verification
+
+The persistence/security audit, lifecycle behavior, threat model and backend GAP
+are in [`docs/PR-3-REPORT.md`](docs/PR-3-REPORT.md).

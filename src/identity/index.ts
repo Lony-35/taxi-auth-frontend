@@ -4,7 +4,10 @@ export { IdentityService } from './service/IdentityService'
 export { IdentityStore } from './store/IdentityStore'
 export type { IdentityState, IdentityStoreStatus } from './store/IdentityStore'
 export { MemorySessionStorage } from './store/SessionStorage'
-export type { SessionStorage } from './store/SessionStorage'
+export { PersistentSessionStorage } from './store/SessionStorage'
+export type { KeyValueStorage, SessionStorage } from './store/SessionStorage'
+export { IdentitySessionError, toIdentitySessionError } from './model/sessionError'
+export type { SessionErrorCode } from './model/sessionError'
 export type {
   Credentials,
   Identity,
