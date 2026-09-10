@@ -113,6 +113,14 @@ describe('TaxiIdentityProvider', () => {
     )
   })
 
+  it('keeps password recovery and ACL behavior behind the Identity contract', async () => {
+    const api = taxiApi()
+    const provider = new TaxiIdentityProvider(api)
+    await provider.remindPassword('u@example.com')
+    expect(api.remindPassword).toHaveBeenCalledWith('u@example.com')
+    expect(taxiUserToIdentity(user)).toMatchObject({ roles: ['client'], permissions: [] })
+  })
+
   it('distinguishes missing and expired session references', async () => {
     const api = taxiApi()
     const vault = new MemoryTaxiSessionVault(() => 'expired', () => 10)

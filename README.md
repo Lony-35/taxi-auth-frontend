@@ -227,3 +227,15 @@ are in [`docs/PR-3-REPORT.md`](docs/PR-3-REPORT.md).
 
 The provider contract audit, capability/permission boundary, error taxonomy, Taxi
 capability evidence and GAPs are in [`docs/PR-4-REPORT.md`](docs/PR-4-REPORT.md).
+
+## Stable Consumer API
+
+Consumers import the complete provider-neutral contract from `src/identity` and
+construct `IdentityService` plus `IdentityStore`; they do not import a concrete
+provider's internals. `IdentityState.operationError` exposes normalized operation
+codes separately from PR-3 `sessionError`, and the Store now includes password
+recovery alongside login, registration, restore, logout and profile update.
+
+The public API audit, complete lifecycle table, Fake/Limited replacement proof,
+Taxi regression and remaining GAPs are in
+[`docs/PR-5-REPORT.md`](docs/PR-5-REPORT.md).
