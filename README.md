@@ -239,3 +239,17 @@ recovery alongside login, registration, restore, logout and profile update.
 The public API audit, complete lifecycle table, Fake/Limited replacement proof,
 Taxi regression and remaining GAPs are in
 [`docs/PR-5-REPORT.md`](docs/PR-5-REPORT.md).
+
+## Temporary Taxi F5 workaround
+
+Until the Taxi backend provides a Secure/HttpOnly server-owned browser session,
+`PersistentTaxiSessionVault` keeps the minimum restore credentials inside the
+Taxi adapter boundary. Identity Core and provider-neutral storage continue to
+see only an opaque `SessionReference`. Successful login survives a full browser
+reload; logout and failed restore always remove the Taxi-specific persistent
+entry.
+
+This frontend persistence is a temporary security compromise and must be
+removed after backend-owned session restore is available. The exact storage
+boundary, threat trade-off, lifecycle evidence, removal condition, and test
+coverage are documented in [`docs/PR-6-REPORT.md`](docs/PR-6-REPORT.md).

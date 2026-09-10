@@ -3,9 +3,18 @@ import type { TaxiApi, TaxiTokens, TaxiUser } from './types'
 import { UserRole } from './types'
 import { TaxiIdentityProvider } from './TaxiIdentityProvider'
 import { taxiUserToIdentity } from './mapping'
-import { MemoryTaxiSessionVault } from './sessionVault'
+import {
+  MemoryTaxiSessionVault,
+  PersistentTaxiSessionVault,
+  type TaxiCredentialStorage,
+} from './sessionVault'
 import { TaxiApiError } from './errors'
-import type { SessionReference } from '../../identity'
+import {
+  IdentityService,
+  IdentityStore,
+  PersistentSessionStorage,
+  type SessionReference,
+} from '../../identity'
 
 const user: TaxiUser = {
   u_id: '1', u_name: 'User', u_email: 'u@example.com', u_role: UserRole.Client,
@@ -173,4 +182,139 @@ describe('TaxiIdentityProvider', () => {
     })
     expect(vault.read(session.reference)).toBeNull()
   })
+
+  it('restores the authenticated Store after login and a full application recreation', async () => {
+    const api = taxiApi()
+    const storage = new BrowserStorage()
+    const first = createPersistentStore(api, storage, () => 'f5')
+
+    const session = await first.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+    expect(storage.getItem('platform-identity.session-reference')).toBe(session.reference)
+    expect(storage.getItem(taxiStorageKey(session.reference))).toContain(tokens.token)
+
+    const recreated = createPersistentStore(api, storage)
+    await recreated.initialize()
+    expect(recreated.getSnapshot()).toMatchObject({
+      status: 'authenticated', identity: { id: '1' }, sessionError: null,
+    })
+    expect(api.getAuthorizedUser).toHaveBeenCalledWith(tokens)
+  })
+
+  it('prevents restore after logout and clears both storage boundaries', async () => {
+    const api = taxiApi()
+    const storage = new BrowserStorage()
+    const store = createPersistentStore(api, storage, () => 'logout-f5')
+    const session = await store.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+
+    await store.logout()
+    expect(storage.getItem('platform-identity.session-reference')).toBeNull()
+    expect(storage.getItem(taxiStorageKey(session.reference))).toBeNull()
+
+    const recreated = createPersistentStore(api, storage)
+    await recreated.initialize()
+    expect(recreated.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null, sessionError: 'NO_SESSION',
+    })
+  })
+
+  it('clears persistent credentials even when backend logout fails', async () => {
+    const api = taxiApi()
+    vi.mocked(api.logout).mockRejectedValue(new Error('secret-token'))
+    const storage = new BrowserStorage()
+    const store = createPersistentStore(api, storage, () => 'failed-logout-f5')
+    const session = await store.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+
+    await expect(store.logout()).rejects.toMatchObject({ code: 'LOGOUT_FAILED' })
+    expect(storage.getItem('platform-identity.session-reference')).toBeNull()
+    expect(storage.getItem(taxiStorageKey(session.reference))).toBeNull()
+  })
+
+  it.each([
+    ['rejected', new TaxiApiError('backend leaked secret-token', 'unauthorized'),
+      'INVALID_PROVIDER_CREDENTIALS'],
+    ['unexpected', new Error('backend leaked secret-token'), 'RESTORE_FAILED'],
+  ] as const)('cleans up a %s persistent restore failure', async (_, failure, code) => {
+    const api = taxiApi()
+    const storage = new BrowserStorage()
+    const first = createPersistentStore(api, storage, () => `restore-${code}`)
+    const session = await first.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+    vi.mocked(api.getAuthorizedUser).mockRejectedValue(failure)
+
+    const recreated = createPersistentStore(api, storage)
+    await recreated.initialize()
+    expect(recreated.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null, sessionError: code,
+    })
+    expect(storage.getItem('platform-identity.session-reference')).toBeNull()
+    expect(storage.getItem(taxiStorageKey(session.reference))).toBeNull()
+    expect(JSON.stringify(recreated.getSnapshot())).not.toContain(tokens.token)
+    expect(recreated.getSnapshot().error).not.toContain(tokens.token)
+  })
+
+  it('keeps credentials out of Core state, opaque handles, URLs and logs', async () => {
+    const api = taxiApi()
+    const storage = new BrowserStorage()
+    const store = createPersistentStore(api, storage, () => 'no-leak')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const session = await store.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+    const observable = [
+      session.reference,
+      JSON.stringify(store.getSnapshot()),
+      storage.getItem('platform-identity.session-reference') ?? '',
+      new URL(`/session/${session.reference}`, 'https://example.test').href,
+    ].join('\n')
+    expect(observable).not.toContain(tokens.token)
+    expect(observable).not.toContain(tokens.u_hash)
+    expect(log).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    log.mockRestore()
+    error.mockRestore()
+  })
 })
+
+function createPersistentStore(
+  api: TaxiApi,
+  storage: BrowserStorage,
+  createId?: () => string,
+) {
+  const provider = new TaxiIdentityProvider(
+    api,
+    new PersistentTaxiSessionVault(storage, createId),
+  )
+  return new IdentityStore(
+    new IdentityService(provider),
+    new PersistentSessionStorage(storage),
+  )
+}
+
+function taxiStorageKey(reference: SessionReference): string {
+  return `taxi.identity.temporary-wa.session:${reference}`
+}
+
+class BrowserStorage implements TaxiCredentialStorage {
+  private readonly items = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.items.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.items.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.items.delete(key)
+  }
+}
