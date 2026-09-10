@@ -27,7 +27,7 @@ import {
   taxiAuthToSession,
   taxiUserToIdentity,
 } from './mapping'
-import { MemoryTaxiSessionVault, type TaxiSessionVault } from './sessionVault'
+import { createDefaultTaxiSessionVault, type TaxiSessionVault } from './sessionVault'
 import { TaxiApiError } from './errors'
 
 export interface TaxiRegistrationData {
@@ -57,7 +57,7 @@ export class TaxiIdentityProvider
 implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
   constructor(
     private readonly taxiApi: TaxiApi,
-    private readonly sessions: TaxiSessionVault = new MemoryTaxiSessionVault(),
+    private readonly sessions: TaxiSessionVault = createDefaultTaxiSessionVault(),
   ) {}
 
   capabilities(): readonly IdentityCapability[] {

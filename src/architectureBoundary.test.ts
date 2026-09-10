@@ -62,6 +62,16 @@ describe('Identity Core dependency boundary', () => {
     expect(taxiVault).toContain('sessions')
   })
 
+  it('isolates the temporary F5 workaround inside the Taxi vault', () => {
+    expect(coreSources.join('\n')).not.toContain('TEMPORARY WA')
+    expect(coreSources.join('\n')).not.toContain('TaxiCredentialStorage')
+    expect(taxiVault).toContain('TEMPORARY WA — REMOVE AFTER BACKEND-OWNED SESSION')
+    expect(taxiVault).toContain('PersistentTaxiSessionVault')
+    expect(taxiProvider).not.toContain('localStorage')
+    expect(service).not.toContain('localStorage')
+    expect(store).not.toContain('localStorage')
+  })
+
   it('keeps capabilities provider-neutral and separate from identity permissions', () => {
     const forbidden = ['TAXI', 'DRIVER', 'CLIENT', 'REFERRAL', 'CAR', 'DOCUMENT_UPLOAD']
     forbidden.forEach(value => expect(capability).not.toContain(`'${value}'`))

@@ -1,8 +1,12 @@
 export { createAuthClient, HttpAuthClient, normalizeDriverPhone } from './httpClient'
 export type { AuthClientOptions, AuthEndpoints } from './httpClient'
 export { TaxiIdentityProvider } from './TaxiIdentityProvider'
-export { MemoryTaxiSessionVault } from './sessionVault'
-export type { TaxiSessionVault } from './sessionVault'
+export {
+  MemoryTaxiSessionVault,
+  PersistentTaxiSessionVault,
+  createDefaultTaxiSessionVault,
+} from './sessionVault'
+export type { TaxiCredentialStorage, TaxiSessionVault } from './sessionVault'
 export type { TaxiSessionResolution } from './sessionVault'
 export { TaxiApiError } from './errors'
 export type { TaxiErrorCode } from './errors'
