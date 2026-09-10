@@ -93,6 +93,25 @@ await store.login({
 Replacing Taxi with `FakeIdentityProvider` requires no change to `IdentityService`
 or `IdentityStore`.
 
+## Provider capabilities
+
+A capability describes what a provider implementation supports; a permission
+describes what the current identity is allowed to do. They are separate types and
+must not be used interchangeably. Consumers can discover support before rendering
+or invoking an operation:
+
+```ts
+store.hasCapability('PASSWORD_RECOVERY')
+store.hasPermission('profile.update')
+```
+
+`IdentityProvider.capabilities()` is a static provider declaration. Operations are
+optional in the contract, so a limited provider does not implement fake success.
+`IdentityService` rejects an absent capability with the secret-safe
+`UNSUPPORTED_CAPABILITY` error before calling the provider. See
+[`docs/PR-4-REPORT.md`](docs/PR-4-REPORT.md) for the complete contract audit and
+Taxi evidence.
+
 ## Identity ACL
 
 Every `Identity` contains complete `roles` and `permissions` arrays. A role groups
@@ -203,3 +222,8 @@ The ACL acceptance report, confirmed Taxi facts and explicit GAP are in
 
 The persistence/security audit, lifecycle behavior, threat model and backend GAP
 are in [`docs/PR-3-REPORT.md`](docs/PR-3-REPORT.md).
+
+## PR-4 verification
+
+The provider contract audit, capability/permission boundary, error taxonomy, Taxi
+capability evidence and GAPs are in [`docs/PR-4-REPORT.md`](docs/PR-4-REPORT.md).

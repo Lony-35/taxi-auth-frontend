@@ -15,6 +15,7 @@ import {
   toIdentitySessionError,
   type SessionErrorCode,
 } from '../model/sessionError'
+import type { IdentityCapability } from '../model/capability'
 
 export type IdentityStoreStatus = 'idle' | 'loading' | 'authenticated' | 'error'
 
@@ -149,6 +150,12 @@ export class IdentityStore<
 
   hasPermission = (permission: Permission): boolean => (
     this.service.hasPermission(this.state.identity, permission)
+  )
+
+  capabilities = (): readonly IdentityCapability[] => this.service.capabilities()
+
+  hasCapability = (capability: IdentityCapability): boolean => (
+    this.service.hasCapability(capability)
   )
 
   private patch(patch: Partial<IdentityState>): void {

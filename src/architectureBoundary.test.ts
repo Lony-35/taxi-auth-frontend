@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import contract from './identity/contract/IdentityProvider.ts?raw'
 import model from './identity/model/identity.ts?raw'
+import capability from './identity/model/capability.ts?raw'
+import operationError from './identity/model/operationError.ts?raw'
 import sessionError from './identity/model/sessionError.ts?raw'
 import fakeProvider from './identity/provider/FakeIdentityProvider.ts?raw'
 import service from './identity/service/IdentityService.ts?raw'
@@ -13,7 +15,9 @@ import taxiProfile from './providers/taxi/profile.ts?raw'
 import taxiUserMapping from './providers/taxi/taxiUserMapping.ts?raw'
 import taxiVault from './providers/taxi/sessionVault.ts?raw'
 
-const coreSources = [contract, model, sessionError, fakeProvider, service, store, storage]
+const coreSources = [
+  contract, model, capability, operationError, sessionError, fakeProvider, service, store, storage,
+]
 
 describe('Identity Core dependency boundary', () => {
   it('contains no provider implementation imports or legacy transport fields', () => {
@@ -54,5 +58,20 @@ describe('Identity Core dependency boundary', () => {
     expect(storage).not.toContain('btoa')
     expect(taxiVault).toContain('TaxiTokens')
     expect(taxiVault).toContain('sessions')
+  })
+
+  it('keeps capabilities provider-neutral and separate from identity permissions', () => {
+    const forbidden = ['TAXI', 'DRIVER', 'CLIENT', 'REFERRAL', 'CAR', 'DOCUMENT_UPLOAD']
+    forbidden.forEach(value => expect(capability).not.toContain(`'${value}'`))
+    expect(model).toContain('permissions: Permission[]')
+    expect(capability).not.toContain('Permission[]')
+    expect(contract).not.toContain('TaxiApiError')
+    expect(operationError).not.toContain('TaxiApiError')
+  })
+
+  it('keeps Taxi capability evidence in the Taxi adapter', () => {
+    expect(taxiProvider).toContain('TAXI_IDENTITY_CAPABILITIES')
+    expect(service).toContain('UNSUPPORTED_CAPABILITY')
+    expect(service).not.toContain('providers/taxi')
   })
 })

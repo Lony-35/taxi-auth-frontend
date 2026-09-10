@@ -1,4 +1,9 @@
-import { IdentitySessionError, type IdentityProvider } from '../../identity'
+import {
+  IdentitySessionError,
+  IdentityOperationError,
+  type IdentityCapability,
+  type IdentityProvider,
+} from '../../identity'
 import type {
   Credentials,
   Identity,
@@ -55,35 +60,47 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     private readonly sessions: TaxiSessionVault = new MemoryTaxiSessionVault(),
   ) {}
 
+  capabilities(): readonly IdentityCapability[] {
+    return TAXI_IDENTITY_CAPABILITIES
+  }
+
   async login(credentials: Credentials): Promise<Session> {
-    const result = await this.taxiApi.login({
-      login: credentials.identifier,
-      password: credentials.secret,
-      type: credentials.kind === 'phone' ? 'phone' : 'e-mail',
-    })
-    return taxiAuthToSession(result, this.sessions.create(result.tokens))
+    try {
+      const result = await this.taxiApi.login({
+        login: credentials.identifier,
+        password: credentials.secret,
+        type: credentials.kind === 'phone' ? 'phone' : 'e-mail',
+      })
+      return taxiAuthToSession(result, this.sessions.create(result.tokens))
+    } catch (error) {
+      throw taxiError(error, 'AUTHENTICATION')
+    }
   }
 
   async register(request: TaxiRegistrationRequest): Promise<RegistrationResult> {
     const taxi = request.taxi
-    const result = await this.taxiApi.register({
-      u_name: request.profile.name ?? '',
-      u_email: request.profile.email,
-      u_phone: request.profile.phone,
-      u_role: taxi?.role ?? UserRole.Client,
-      u_city: taxi?.city ?? request.profile.city,
-      ref_code: taxi?.referralCode,
-      u_details: taxi?.details,
-      uploads: taxi?.uploads,
-      u_car: taxi?.car,
-      country: taxi?.country,
-      defaultLocationClassId: taxi?.defaultLocationClassId,
-    })
-    const identity = result.user ? taxiUserToIdentity(result.user) : null
-    const session: Session | null = identity && result.tokens
-      ? { identity, reference: this.sessions.create(result.tokens) }
-      : null
-    return { identity, session }
+    try {
+      const result = await this.taxiApi.register({
+        u_name: request.profile.name ?? '',
+        u_email: request.profile.email,
+        u_phone: request.profile.phone,
+        u_role: taxi?.role ?? UserRole.Client,
+        u_city: taxi?.city ?? request.profile.city,
+        ref_code: taxi?.referralCode,
+        u_details: taxi?.details,
+        uploads: taxi?.uploads,
+        u_car: taxi?.car,
+        country: taxi?.country,
+        defaultLocationClassId: taxi?.defaultLocationClassId,
+      })
+      const identity = result.user ? taxiUserToIdentity(result.user) : null
+      const session: Session | null = identity && result.tokens
+        ? { identity, reference: this.sessions.create(result.tokens) }
+        : null
+      return { identity, session }
+    } catch (error) {
+      throw taxiError(error, 'REGISTRATION')
+    }
   }
 
   async restoreSession(reference: SessionReference): Promise<Session | null> {
@@ -108,13 +125,19 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     session: Session,
   ): Promise<Identity> {
     const tokens = this.requireTokens(session.reference)
-    const currentUser = await this.taxiApi.getAuthorizedUser(tokens)
-    if (currentUser.u_id !== identity.id) throw new Error('Taxi identity mismatch')
-    const result = await this.taxiApi.updateProfile(currentUser, {
-      values: identityProfileToTaxiValues(update.profile),
-      ...update.taxi,
-    }, tokens)
-    return taxiUserToIdentity(result.user)
+    try {
+      const currentUser = await this.taxiApi.getAuthorizedUser(tokens)
+      if (currentUser.u_id !== identity.id) {
+        throw new IdentityOperationError('AUTHORIZATION_FAILED', 'PROFILE_UPDATE')
+      }
+      const result = await this.taxiApi.updateProfile(currentUser, {
+        values: identityProfileToTaxiValues(update.profile),
+        ...update.taxi,
+      }, tokens)
+      return taxiUserToIdentity(result.user)
+    } catch (error) {
+      throw taxiError(error, 'PROFILE_UPDATE')
+    }
   }
 
   async logout(session: Session | null): Promise<void> {
@@ -129,8 +152,12 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     }
   }
 
-  remindPassword(identifier: string): Promise<void> {
-    return this.taxiApi.remindPassword(identifier)
+  async remindPassword(identifier: string): Promise<void> {
+    try {
+      await this.taxiApi.remindPassword(identifier)
+    } catch (error) {
+      throw taxiError(error, 'PASSWORD_RECOVERY')
+    }
   }
 
   checkReferralCode(code: string) {
@@ -147,4 +174,31 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     if (resolved.status === 'expired') throw new IdentitySessionError('EXPIRED_SESSION')
     return resolved.tokens
   }
+}
+
+const TAXI_IDENTITY_CAPABILITIES: readonly IdentityCapability[] = Object.freeze([
+  'AUTHENTICATION',
+  'REGISTRATION',
+  'SESSION_RESTORE',
+  'PROFILE_READ',
+  'PROFILE_UPDATE',
+  'PASSWORD_RECOVERY',
+  'LOGOUT',
+  'ACL',
+])
+
+function taxiError(error: unknown, capability: IdentityCapability): IdentityOperationError {
+  if (error instanceof IdentityOperationError) return error
+  if (error instanceof TaxiApiError) {
+    if (error.code === 'wrong_login' || error.code === 'wrong_password') {
+      return new IdentityOperationError('AUTHENTICATION_FAILED', capability)
+    }
+    if (error.code === 'wrong_phone') {
+      return new IdentityOperationError('VALIDATION_FAILED', capability)
+    }
+    if (error.code === 'unauthorized') {
+      return new IdentityOperationError('AUTHORIZATION_FAILED', capability)
+    }
+  }
+  return new IdentityOperationError('PROVIDER_OPERATION_FAILED', capability)
 }
