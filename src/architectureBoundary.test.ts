@@ -14,6 +14,8 @@ import taxiMapping from './providers/taxi/mapping.ts?raw'
 import taxiProfile from './providers/taxi/profile.ts?raw'
 import taxiUserMapping from './providers/taxi/taxiUserMapping.ts?raw'
 import taxiVault from './providers/taxi/sessionVault.ts?raw'
+import publicApi from './identity/index.ts?raw'
+import consumerContract from './identity/consumerContract.test.ts?raw'
 
 const coreSources = [
   contract, model, capability, operationError, sessionError, fakeProvider, service, store, storage,
@@ -73,5 +75,19 @@ describe('Identity Core dependency boundary', () => {
     expect(taxiProvider).toContain('TAXI_IDENTITY_CAPABILITIES')
     expect(service).toContain('UNSUPPORTED_CAPABILITY')
     expect(service).not.toContain('providers/taxi')
+  })
+
+  it('exposes a provider-neutral public API and consumer example', () => {
+    const forbidden = [
+      'providers/taxi', 'TaxiApi', 'TaxiApiError', 'TaxiRegistration',
+      'UserRole', 'u_' + 'role', '/auth', '/token', 'secret-token',
+    ]
+    forbidden.forEach(value => expect(publicApi).not.toContain(value))
+    forbidden.slice(0, 8).forEach(value => expect(consumerContract).not.toContain(value))
+    ;[
+      'IdentityProvider', 'IdentityService', 'IdentityStore', 'IdentityState',
+      'IdentityCapability', 'IdentityOperationError', 'IdentitySessionError',
+      'SessionStorage', 'Role', 'Permission',
+    ].forEach(value => expect(publicApi).toContain(value))
   })
 })

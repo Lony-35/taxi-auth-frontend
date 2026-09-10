@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionReference } from '../model/identity'
 import { IdentitySessionError } from '../model/sessionError'
+import { IdentityOperationError } from '../model/operationError'
 import { FakeIdentityProvider } from '../provider/FakeIdentityProvider'
 import { IdentityService } from '../service/IdentityService'
 import { IdentityStore } from './IdentityStore'
@@ -50,6 +51,70 @@ describe('IdentityStore provider independence', () => {
     expect(store.getSnapshot()).toMatchObject({ status: 'idle', identity: null, session: null })
   })
 
+  it('records a normalized login failure in operation state', async () => {
+    const store = new IdentityStore(new IdentityService(new FakeIdentityProvider()))
+    await expect(store.login({
+      identifier: 'demo@example.com', secret: 'wrong', kind: 'email',
+    })).rejects.toMatchObject({ code: 'AUTHENTICATION_FAILED' })
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'error', identity: null, session: null,
+      error: 'Authentication failed', sessionError: null,
+      operationError: 'AUTHENTICATION_FAILED',
+    })
+  })
+
+  it('records normalized registration and profile failures', async () => {
+    const provider = new FakeIdentityProvider()
+    const store = new IdentityStore(new IdentityService(provider))
+    vi.spyOn(provider, 'register').mockRejectedValueOnce(
+      new IdentityOperationError('VALIDATION_FAILED', 'REGISTRATION'),
+    )
+    await expect(store.register({
+      credentials: { identifier: 'bad', kind: 'email' }, profile: {},
+    })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' })
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'error', operationError: 'VALIDATION_FAILED', sessionError: null,
+    })
+
+    await store.login({ identifier: 'demo@example.com', secret: 'demo', kind: 'email' })
+    vi.spyOn(provider, 'updateProfile').mockRejectedValueOnce(
+      new IdentityOperationError('AUTHORIZATION_FAILED', 'PROFILE_UPDATE'),
+    )
+    await expect(store.updateProfile({ profile: { name: 'Denied' } }))
+      .rejects.toMatchObject({ code: 'AUTHORIZATION_FAILED' })
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'error', identity: { id: 'fake-identity' },
+      session: { reference: 'fake-session' },
+      operationError: 'AUTHORIZATION_FAILED', sessionError: null,
+    })
+  })
+
+  it('clears a stale reference when registration succeeds without a session', async () => {
+    const provider = new FakeIdentityProvider()
+    vi.spyOn(provider, 'register').mockResolvedValueOnce({ identity: null, session: null })
+    const storage = new MemorySessionStorage()
+    storage.write('stale' as SessionReference)
+    const store = new IdentityStore(new IdentityService(provider), storage)
+
+    await store.register({
+      credentials: { identifier: 'pending@example.com', kind: 'email' }, profile: {},
+    })
+    expect(storage.read()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null,
+      sessionError: 'NO_SESSION', operationError: null,
+    })
+  })
+
+  it('uses a provider-neutral authorization error for profile update without a session', async () => {
+    const store = new IdentityStore(new IdentityService(new FakeIdentityProvider()))
+    await expect(store.updateProfile({ profile: { name: 'No session' } }))
+      .rejects.toMatchObject({ code: 'AUTHORIZATION_FAILED', capability: 'PROFILE_UPDATE' })
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'error', operationError: 'AUTHORIZATION_FAILED', sessionError: null,
+    })
+  })
+
   it('reports NO_SESSION without calling the provider', async () => {
     const provider = new FakeIdentityProvider()
     const restore = vi.spyOn(provider, 'restoreSession')
@@ -80,6 +145,21 @@ describe('IdentityStore provider independence', () => {
     expect(storage.read()).toBeNull()
     expect(store.getSnapshot()).toMatchObject({
       status: 'idle', error: 'Session has expired', sessionError: 'EXPIRED_SESSION',
+    })
+  })
+
+  it('preserves invalid provider credentials as a session lifecycle failure', async () => {
+    const provider = new FakeIdentityProvider()
+    vi.spyOn(provider, 'restoreSession').mockRejectedValue(
+      new IdentitySessionError('INVALID_PROVIDER_CREDENTIALS'),
+    )
+    const storage = new MemorySessionStorage()
+    storage.write('rejected' as SessionReference)
+    const store = new IdentityStore(new IdentityService(provider), storage)
+    await store.initialize()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null,
+      operationError: null, sessionError: 'INVALID_PROVIDER_CREDENTIALS',
     })
   })
 
