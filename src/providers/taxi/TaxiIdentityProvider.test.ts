@@ -31,6 +31,14 @@ function taxiApi(): TaxiApi {
 }
 
 describe('TaxiIdentityProvider', () => {
+  it('declares only capabilities confirmed by the current Taxi API adapter', () => {
+    const provider = new TaxiIdentityProvider(taxiApi())
+    expect(provider.capabilities()).toEqual([
+      'AUTHENTICATION', 'REGISTRATION', 'SESSION_RESTORE', 'PROFILE_READ',
+      'PROFILE_UPDATE', 'PASSWORD_RECOVERY', 'LOGOUT', 'ACL',
+    ])
+  })
+
   it('hides two-step Taxi login behind the provider contract', async () => {
     const api = taxiApi()
     const provider = new TaxiIdentityProvider(api, new MemoryTaxiSessionVault(() => 'login'))
@@ -45,6 +53,19 @@ describe('TaxiIdentityProvider', () => {
     expect(session.identity.permissions).toEqual([])
     expect(session.reference).toBe('taxi-session:login')
     expect(session.reference).not.toContain(tokens.token)
+  })
+
+  it('maps known Taxi authentication errors without leaking provider details', async () => {
+    const api = taxiApi()
+    vi.mocked(api.login).mockRejectedValue(
+      new TaxiApiError('backend leaked secret-token', 'wrong_password'),
+    )
+    const provider = new TaxiIdentityProvider(api)
+    await expect(provider.login({
+      identifier: 'u@example.com', secret: 'wrong', kind: 'email',
+    })).rejects.toMatchObject({
+      code: 'AUTHENTICATION_FAILED', message: 'Authentication failed',
+    })
   })
 
   it('maps universal registration to explicit Taxi registration data', async () => {

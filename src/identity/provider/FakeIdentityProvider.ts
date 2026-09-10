@@ -8,10 +8,23 @@ import type {
   Session,
   SessionReference,
 } from '../model/identity'
+import {
+  fullIdentityCapabilities,
+  type IdentityCapability,
+} from '../model/capability'
+import { IdentityOperationError } from '../model/operationError'
 
 const fakeReference = 'fake-session' as SessionReference
 
 export class FakeIdentityProvider implements IdentityProvider {
+  constructor(
+    private readonly supportedCapabilities: readonly IdentityCapability[] = fullIdentityCapabilities,
+  ) {}
+
+  capabilities(): readonly IdentityCapability[] {
+    return [...this.supportedCapabilities]
+  }
+
   private identity: Identity = {
     id: 'fake-identity',
     status: 'ACTIVE',
@@ -22,7 +35,7 @@ export class FakeIdentityProvider implements IdentityProvider {
 
   async login(credentials: Credentials): Promise<Session> {
     if (credentials.identifier !== 'demo@example.com' || credentials.secret !== 'demo') {
-      throw new Error('Invalid credentials')
+      throw new IdentityOperationError('AUTHENTICATION_FAILED', 'AUTHENTICATION')
     }
     return { identity: this.identity, reference: fakeReference }
   }
@@ -53,4 +66,11 @@ export class FakeIdentityProvider implements IdentityProvider {
   async logout(): Promise<void> {}
 
   async remindPassword(): Promise<void> {}
+}
+
+/** Demonstrates a valid provider that intentionally omits password recovery. */
+export class LimitedFakeIdentityProvider extends FakeIdentityProvider {
+  constructor() {
+    super(fullIdentityCapabilities.filter(capability => capability !== 'PASSWORD_RECOVERY'))
+  }
 }

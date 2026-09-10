@@ -24,6 +24,8 @@ describe('IdentityStore provider independence', () => {
     expect(store.hasRole('client')).toBe(false)
     expect(store.hasPermission('profile.update')).toBe(true)
     expect(store.hasPermission('users.delete')).toBe(false)
+    expect(store.hasCapability('PROFILE_UPDATE')).toBe(true)
+    expect(store.capabilities()).toContain('ACL')
 
     const restored = new IdentityStore(service, storage)
     await restored.initialize()
