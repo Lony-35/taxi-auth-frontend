@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import contract from './identity/contract/IdentityProvider.ts?raw'
 import model from './identity/model/identity.ts?raw'
+import sessionError from './identity/model/sessionError.ts?raw'
 import fakeProvider from './identity/provider/FakeIdentityProvider.ts?raw'
 import service from './identity/service/IdentityService.ts?raw'
 import store from './identity/store/IdentityStore.ts?raw'
@@ -10,8 +11,9 @@ import taxiClient from './providers/taxi/httpClient.ts?raw'
 import taxiMapping from './providers/taxi/mapping.ts?raw'
 import taxiProfile from './providers/taxi/profile.ts?raw'
 import taxiUserMapping from './providers/taxi/taxiUserMapping.ts?raw'
+import taxiVault from './providers/taxi/sessionVault.ts?raw'
 
-const coreSources = [contract, model, fakeProvider, service, store, storage]
+const coreSources = [contract, model, sessionError, fakeProvider, service, store, storage]
 
 describe('Identity Core dependency boundary', () => {
   it('contains no provider implementation imports or legacy transport fields', () => {
@@ -38,10 +40,19 @@ describe('Identity Core dependency boundary', () => {
   })
 
   it('keeps the Taxi provider independent from the legacy auth facade', () => {
-    const source = [taxiProvider, taxiClient, taxiMapping, taxiProfile, taxiUserMapping].join('\n')
+    const source = [taxiProvider, taxiClient, taxiMapping, taxiProfile, taxiUserMapping, taxiVault].join('\n')
     expect(source).not.toContain("../../auth")
     expect(source).not.toContain('AuthService')
     expect(source).not.toContain('JSON.parse(reference)')
     expect(source).not.toContain('JSON.stringify([tokens.token')
+  })
+
+  it('keeps persistence provider-neutral and credentials inside the Taxi vault', () => {
+    expect(storage).toContain('SessionReference')
+    expect(storage).not.toContain('Taxi')
+    expect(storage).not.toContain('JSON.stringify')
+    expect(storage).not.toContain('btoa')
+    expect(taxiVault).toContain('TaxiTokens')
+    expect(taxiVault).toContain('sessions')
   })
 })

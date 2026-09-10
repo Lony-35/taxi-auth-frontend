@@ -1,4 +1,4 @@
-import type { IdentityProvider } from '../../identity'
+import { IdentitySessionError, type IdentityProvider } from '../../identity'
 import type {
   Credentials,
   Identity,
@@ -23,6 +23,7 @@ import {
   taxiUserToIdentity,
 } from './mapping'
 import { MemoryTaxiSessionVault, type TaxiSessionVault } from './sessionVault'
+import { TaxiApiError } from './errors'
 
 export interface TaxiRegistrationData {
   role?: UserRole
@@ -86,10 +87,19 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
   }
 
   async restoreSession(reference: SessionReference): Promise<Session | null> {
-    const tokens = this.sessions.read(reference)
-    if (!tokens) return null
-    const user = await this.taxiApi.getAuthorizedUser(tokens)
-    return { identity: taxiUserToIdentity(user), reference }
+    const resolved = this.sessions.resolve(reference)
+    if (resolved.status === 'missing') throw new IdentitySessionError('INVALID_REFERENCE')
+    if (resolved.status === 'expired') throw new IdentitySessionError('EXPIRED_SESSION')
+    try {
+      const user = await this.taxiApi.getAuthorizedUser(resolved.tokens)
+      return { identity: taxiUserToIdentity(user), reference }
+    } catch (error) {
+      this.sessions.delete(reference)
+      if (error instanceof TaxiApiError && error.code === 'unauthorized') {
+        throw new IdentitySessionError('INVALID_PROVIDER_CREDENTIALS')
+      }
+      throw new IdentitySessionError('RESTORE_FAILED')
+    }
   }
 
   async updateProfile(
@@ -112,6 +122,8 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
     const tokens = reference ? this.sessions.read(reference) : null
     try {
       await this.taxiApi.logout(tokens)
+    } catch {
+      throw new IdentitySessionError('LOGOUT_FAILED')
     } finally {
       if (reference) this.sessions.delete(reference)
     }
@@ -130,8 +142,9 @@ implements IdentityProvider<TaxiRegistrationRequest, TaxiProfileUpdate> {
   }
 
   private requireTokens(reference: SessionReference): TaxiTokens {
-    const tokens = this.sessions.read(reference)
-    if (!tokens) throw new Error('Taxi session reference is unknown or expired')
-    return tokens
+    const resolved = this.sessions.resolve(reference)
+    if (resolved.status === 'missing') throw new IdentitySessionError('INVALID_REFERENCE')
+    if (resolved.status === 'expired') throw new IdentitySessionError('EXPIRED_SESSION')
+    return resolved.tokens
   }
 }

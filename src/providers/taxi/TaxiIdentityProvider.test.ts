@@ -4,6 +4,8 @@ import { UserRole } from './types'
 import { TaxiIdentityProvider } from './TaxiIdentityProvider'
 import { taxiUserToIdentity } from './mapping'
 import { MemoryTaxiSessionVault } from './sessionVault'
+import { TaxiApiError } from './errors'
+import type { SessionReference } from '../../identity'
 
 const user: TaxiUser = {
   u_id: '1', u_name: 'User', u_email: 'u@example.com', u_role: UserRole.Client,
@@ -88,5 +90,58 @@ describe('TaxiIdentityProvider', () => {
       { values: { u_name: 'Updated' } },
       tokens,
     )
+  })
+
+  it('distinguishes missing and expired session references', async () => {
+    const api = taxiApi()
+    const vault = new MemoryTaxiSessionVault(() => 'expired', () => 10)
+    const provider = new TaxiIdentityProvider(api, vault)
+    await expect(provider.restoreSession('unknown' as SessionReference))
+      .rejects.toMatchObject({ code: 'INVALID_REFERENCE' })
+    const expired = vault.create(tokens, { expiresAt: 10 })
+    await expect(provider.restoreSession(expired))
+      .rejects.toMatchObject({ code: 'EXPIRED_SESSION' })
+    expect(api.getAuthorizedUser).not.toHaveBeenCalled()
+  })
+
+  it('clears rejected provider credentials and emits a secret-safe error', async () => {
+    const api = taxiApi()
+    vi.mocked(api.getAuthorizedUser).mockRejectedValue(
+      new TaxiApiError('backend leaked secret-token', 'unauthorized'),
+    )
+    const vault = new MemoryTaxiSessionVault(() => 'rejected')
+    const provider = new TaxiIdentityProvider(api, vault)
+    const reference = vault.create(tokens)
+    const failure = provider.restoreSession(reference)
+    await expect(failure).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER_CREDENTIALS', message: 'Provider session is invalid',
+    })
+    expect(vault.read(reference)).toBeNull()
+  })
+
+  it('clears credentials and sanitizes an unexpected restore failure', async () => {
+    const api = taxiApi()
+    vi.mocked(api.getAuthorizedUser).mockRejectedValue(new Error('secret-token'))
+    const vault = new MemoryTaxiSessionVault(() => 'failed')
+    const provider = new TaxiIdentityProvider(api, vault)
+    const reference = vault.create(tokens)
+    await expect(provider.restoreSession(reference)).rejects.toMatchObject({
+      code: 'RESTORE_FAILED', message: 'Session restore failed',
+    })
+    expect(vault.read(reference)).toBeNull()
+  })
+
+  it('deletes provider credentials even when remote logout fails', async () => {
+    const api = taxiApi()
+    vi.mocked(api.logout).mockRejectedValue(new Error('secret-token'))
+    const vault = new MemoryTaxiSessionVault(() => 'logout')
+    const provider = new TaxiIdentityProvider(api, vault)
+    const session = await provider.login({
+      identifier: 'u@example.com', secret: 'secret', kind: 'email',
+    })
+    await expect(provider.logout(session)).rejects.toMatchObject({
+      code: 'LOGOUT_FAILED', message: 'Session logout failed',
+    })
+    expect(vault.read(session.reference)).toBeNull()
   })
 })

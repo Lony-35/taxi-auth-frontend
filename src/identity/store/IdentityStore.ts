@@ -10,6 +10,11 @@ import type {
   Session,
   Role,
 } from '../model/identity'
+import {
+  IdentitySessionError,
+  toIdentitySessionError,
+  type SessionErrorCode,
+} from '../model/sessionError'
 
 export type IdentityStoreStatus = 'idle' | 'loading' | 'authenticated' | 'error'
 
@@ -18,12 +23,13 @@ export interface IdentityState {
   identity: Identity | null
   session: Session | null
   error: string | null
+  sessionError: SessionErrorCode | null
 }
 
 type Listener = () => void
 
 const initialState: IdentityState = {
-  status: 'idle', identity: null, session: null, error: null,
+  status: 'idle', identity: null, session: null, error: null, sessionError: 'NO_SESSION',
 }
 
 export class IdentityStore<
@@ -47,38 +53,50 @@ export class IdentityStore<
 
   initialize = async (): Promise<void> => {
     const reference = this.storage.read()
-    if (!reference) return
-    this.patch({ status: 'loading', error: null })
+    if (!reference) {
+      this.patch({ ...initialState })
+      return
+    }
+    this.patch({ status: 'loading', error: null, sessionError: null })
     try {
       const session = await this.service.restoreSession(reference)
       if (!session) {
         this.storage.clear()
-        this.state = initialState
+        this.patchSessionFailure(new IdentitySessionError('INVALID_REFERENCE'))
       } else {
-        this.patch({ status: 'authenticated', identity: session.identity, session, error: null })
+        this.patch({
+          status: 'authenticated', identity: session.identity, session,
+          error: null, sessionError: null,
+        })
       }
     } catch (error) {
       this.storage.clear()
-      this.patch({ ...initialState, error: errorMessage(error) })
+      this.patchSessionFailure(toIdentitySessionError(error, 'RESTORE_FAILED'))
     }
   }
 
   login = async (credentials: Credentials): Promise<Session> => {
-    this.patch({ status: 'loading', error: null })
+    this.patch({ status: 'loading', error: null, sessionError: null })
     try {
       const session = await this.service.login(credentials)
       this.storage.write(session.reference)
-      this.patch({ status: 'authenticated', identity: session.identity, session, error: null })
+      this.patch({
+        status: 'authenticated', identity: session.identity, session,
+        error: null, sessionError: null,
+      })
       return session
     } catch (error) {
       this.storage.clear()
-      this.patch({ status: 'error', identity: null, session: null, error: errorMessage(error) })
+      this.patch({
+        status: 'error', identity: null, session: null,
+        error: errorMessage(error), sessionError: null,
+      })
       throw error
     }
   }
 
   register = async (request: TRegistration): Promise<RegistrationResult> => {
-    this.patch({ status: 'loading', error: null })
+    this.patch({ status: 'loading', error: null, sessionError: null })
     try {
       const result = await this.service.register(request)
       if (result.session) this.storage.write(result.session.reference)
@@ -87,21 +105,22 @@ export class IdentityStore<
         identity: result.identity,
         session: result.session,
         error: null,
+        sessionError: result.session ? null : 'NO_SESSION',
       })
       return result
     } catch (error) {
-      this.patch({ status: 'error', error: errorMessage(error) })
+      this.patch({ status: 'error', error: errorMessage(error), sessionError: null })
       throw error
     }
   }
 
   updateProfile = async (update: TProfileUpdate): Promise<Identity> => {
     if (!this.state.identity || !this.state.session) throw new Error('Identity is not authenticated')
-    this.patch({ status: 'loading', error: null })
+    this.patch({ status: 'loading', error: null, sessionError: null })
     try {
       const identity = await this.service.updateProfile(this.state.identity, update, this.state.session)
       const session = { ...this.state.session, identity }
-      this.patch({ status: 'authenticated', identity, session, error: null })
+      this.patch({ status: 'authenticated', identity, session, error: null, sessionError: null })
       return identity
     } catch (error) {
       this.patch({ status: 'error', error: errorMessage(error) })
@@ -111,13 +130,19 @@ export class IdentityStore<
 
   logout = async (): Promise<void> => {
     const session = this.state.session
+    let failure: IdentitySessionError | null = null
     try {
       await this.service.logout(session)
+    } catch (error) {
+      failure = toIdentitySessionError(error, 'LOGOUT_FAILED')
     } finally {
       this.storage.clear()
-      this.state = initialState
+      this.state = failure
+        ? { ...initialState, error: failure.message, sessionError: failure.code }
+        : initialState
       this.emit()
     }
+    if (failure) throw failure
   }
 
   hasRole = (role: Role): boolean => this.service.hasRole(this.state.identity, role)
@@ -133,6 +158,13 @@ export class IdentityStore<
 
   private emit(): void {
     this.listeners.forEach(listener => listener())
+  }
+
+  private patchSessionFailure(error: IdentitySessionError): void {
+    this.patch({
+      status: 'idle', identity: null, session: null,
+      error: error.message, sessionError: error.code,
+    })
   }
 }
 

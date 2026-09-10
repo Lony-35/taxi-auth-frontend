@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { SessionReference } from '../model/identity'
+import { IdentitySessionError } from '../model/sessionError'
 import { FakeIdentityProvider } from '../provider/FakeIdentityProvider'
 import { IdentityService } from '../service/IdentityService'
 import { IdentityStore } from './IdentityStore'
@@ -44,5 +46,67 @@ describe('IdentityStore provider independence', () => {
     expect(store.getSnapshot().identity?.profile.name).toBe('Updated')
     await store.logout()
     expect(store.getSnapshot()).toMatchObject({ status: 'idle', identity: null, session: null })
+  })
+
+  it('reports NO_SESSION without calling the provider', async () => {
+    const provider = new FakeIdentityProvider()
+    const restore = vi.spyOn(provider, 'restoreSession')
+    const store = new IdentityStore(new IdentityService(provider), new MemorySessionStorage())
+    await store.initialize()
+    expect(restore).not.toHaveBeenCalled()
+    expect(store.getSnapshot()).toMatchObject({ status: 'idle', sessionError: 'NO_SESSION' })
+  })
+
+  it('clears an invalid persisted reference and returns to idle', async () => {
+    const storage = new MemorySessionStorage()
+    storage.write('stale' as SessionReference)
+    const store = new IdentityStore(new IdentityService(new FakeIdentityProvider()), storage)
+    await store.initialize()
+    expect(storage.read()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null, sessionError: 'INVALID_REFERENCE',
+    })
+  })
+
+  it('preserves a provider-neutral restore code without exposing provider secrets', async () => {
+    const provider = new FakeIdentityProvider()
+    vi.spyOn(provider, 'restoreSession').mockRejectedValue(new IdentitySessionError('EXPIRED_SESSION'))
+    const storage = new MemorySessionStorage()
+    storage.write('expired' as SessionReference)
+    const store = new IdentityStore(new IdentityService(provider), storage)
+    await store.initialize()
+    expect(storage.read()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', error: 'Session has expired', sessionError: 'EXPIRED_SESSION',
+    })
+  })
+
+  it('sanitizes unknown restore failures and always clears the reference', async () => {
+    const provider = new FakeIdentityProvider()
+    vi.spyOn(provider, 'restoreSession').mockRejectedValue(new Error('secret-token'))
+    const storage = new MemorySessionStorage()
+    storage.write('failing' as SessionReference)
+    const store = new IdentityStore(new IdentityService(provider), storage)
+    await store.initialize()
+    expect(storage.read()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', error: 'Session restore failed', sessionError: 'RESTORE_FAILED',
+    })
+    expect(JSON.stringify(store.getSnapshot())).not.toContain('secret-token')
+  })
+
+  it('clears local state even when provider logout fails', async () => {
+    const provider = new FakeIdentityProvider()
+    vi.spyOn(provider, 'logout').mockRejectedValue(new Error('secret-token'))
+    const storage = new MemorySessionStorage()
+    const store = new IdentityStore(new IdentityService(provider), storage)
+    await store.login({ identifier: 'demo@example.com', secret: 'demo', kind: 'email' })
+    await expect(store.logout()).rejects.toMatchObject({ code: 'LOGOUT_FAILED' })
+    expect(storage.read()).toBeNull()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'idle', identity: null, session: null,
+      error: 'Session logout failed', sessionError: 'LOGOUT_FAILED',
+    })
+    expect(JSON.stringify(store.getSnapshot())).not.toContain('secret-token')
   })
 })
