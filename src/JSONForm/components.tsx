@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { t } from './adapters'
+import { defaultJSONFormAdapter, type JSONFormAdapter } from './adapters'
 import { calculated, parseVariable } from './utils'
 import type { TCalculate, TFormValues } from './types'
 
@@ -9,14 +9,15 @@ type CustomProps = {
   values: TFormValues
   variables?: Record<string, unknown>
   visible?: boolean | string | TCalculate<boolean | string>
+  adapter?: JSONFormAdapter
 }
 
-function CustomAlert({ message, onClose }: { message?: string; onClose?: () => void }) {
+function CustomAlert({ message, onClose, adapter }: { message?: string; onClose?: () => void; adapter: JSONFormAdapter }) {
   const [visible, setVisible] = useState(true)
   if (!visible) return null
   return (
     <div className="json-form-alert" role="alert">
-      <span>{message ? t(message) : ''}</span>
+      <span>{message ? adapter.translate(message) : ''}</span>
       <button type="button" aria-label="Закрыть" onClick={() => { setVisible(false); onClose?.() }}>×</button>
     </div>
   )
@@ -24,7 +25,14 @@ function CustomAlert({ message, onClose }: { message?: string; onClose?: () => v
 
 export const customComponents: Record<string, React.ComponentType<any>> = { alert: CustomAlert }
 
-export default function CustomComponent({ component, props = {}, values, visible, variables = {} }: CustomProps) {
+export default function CustomComponent({
+  component,
+  props = {},
+  values,
+  visible,
+  variables = {},
+  adapter = defaultJSONFormAdapter,
+}: CustomProps) {
   if (!component || !customComponents[component]) return null
   const resolvedVisible = parseVariable(calculated(visible ?? true, values, variables), variables)
   if (!resolvedVisible) return null
@@ -33,6 +41,5 @@ export default function CustomComponent({ component, props = {}, values, visible
     parseVariable(calculated(value as never, values, variables), variables),
   ]))
   const Component = customComponents[component]
-  return <Component {...computed} />
+  return <Component {...computed} adapter={adapter} />
 }
-

@@ -8,7 +8,7 @@ import {
   type ProfileDocumentChange,
 } from './auth'
 import JSONForm from './JSONForm'
-import { fallbackProfileFields, profileFieldsForUser, readConfiguredFields } from './forms/config'
+import { fallbackProfileFields, readConfiguredFields, taxiFormAdapter } from './forms/config'
 
 interface ProfileEditorProps { user: AuthUser; onClose: () => void }
 type FileTuple = [unknown, Blob]
@@ -42,8 +42,8 @@ export default function ProfileEditor({ user, onClose }: ProfileEditorProps) {
   }, [isDriver])
 
   const fields = useMemo(() => {
-    try { return profileFieldsForUser(readConfiguredFields('form_profile', fallbackProfileFields), user) }
-    catch { return profileFieldsForUser(fallbackProfileFields, user) }
+    try { return readConfiguredFields('form_profile', fallbackProfileFields) }
+    catch { return fallbackProfileFields }
   }, [user])
 
   const submit = async (submitted: Record<string, unknown>) => {
@@ -67,6 +67,7 @@ export default function ProfileEditor({ user, onClose }: ProfileEditorProps) {
     try {
       await updateProfile({
         values,
+        schemaFields: fields.flatMap(field => field.name ? [field.name] : []),
         avatar,
         documents: driverCanEditIdentity ? documents : undefined,
         car: car ?? undefined,
@@ -84,6 +85,7 @@ export default function ProfileEditor({ user, onClose }: ProfileEditorProps) {
 
       <JSONForm
         fields={fields}
+        adapter={taxiFormAdapter()}
         defaultValues={user}
         onSubmit={values => void submit(values)}
         state={{ pending: state.status === 'loading' }}

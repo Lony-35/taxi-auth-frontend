@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import * as yup from 'yup'
-import { currentLanguage, phoneMask, t, type Language } from './adapters'
+import { defaultJSONFormAdapter, type JSONFormAdapter, type Language } from './adapters'
 import CustomComponent from './components'
 import JSONFormElement from './JSONFormElement'
 import type { JSONFormState, TForm, TFormElement, TFormValues, TOptionData } from './types'
@@ -16,9 +16,10 @@ export interface JSONFormProps {
   state?: JSONFormState
   language?: Language
   configReady?: boolean
+  adapter?: Partial<JSONFormAdapter>
 }
 
-function initialValues(fields: TForm, defaults: Record<string, unknown>): TFormValues {
+function initialValues(fields: TForm, defaults: Record<string, unknown>, dataSource: unknown): TFormValues {
   const result = makeFlat(defaults)
   const reverseDefaults: TFormValues = {}
 
@@ -27,7 +28,7 @@ function initialValues(fields: TForm, defaults: Record<string, unknown>): TFormV
     const source = field.options as TOptionData
     if (!source.filter) continue
     const current = result[field.name] ?? field.defaultValue
-    const map = deepGet(window.data, source.path) as Record<string, Record<string, unknown>> | undefined
+    const map = deepGet(dataSource, source.path) as Record<string, Record<string, unknown>> | undefined
     const parent = current == null ? undefined : map?.[String(current)]
     const parentValue = parent?.[source.filter.field]
     if (parentValue != null) reverseDefaults[source.filter.by] = parentValue
@@ -35,10 +36,10 @@ function initialValues(fields: TForm, defaults: Record<string, unknown>): TFormV
 
   for (const field of fields) {
     if (!field.name) continue
-    let value = result[field.name] ?? reverseDefaults[field.name] ?? field.defaultValue ?? null
+    let value = result[field.name] ?? deepGet(defaults, field.name) ?? reverseDefaults[field.name] ?? field.defaultValue ?? null
     if (value === null) {
       if (field.type === 'checkbox') value = false
-      else if (['select', 'radio'].includes(String(field.type)) && isRequired(field)) value = optionData(field, result)[0]?.value ?? null
+      else if (['select', 'radio'].includes(String(field.type)) && isRequired(field)) value = optionData(field, result, {}, dataSource)[0]?.value ?? null
       else if (!field.type || ['text', 'email', 'phone', 'password', 'hidden'].includes(String(field.type))) value = ''
     }
     result[field.name] = value
@@ -46,14 +47,14 @@ function initialValues(fields: TForm, defaults: Record<string, unknown>): TFormV
   return result
 }
 
-function prepareForm(fields: TForm, currentValues: TFormValues): [TForm, TFormValues] {
+function prepareForm(fields: TForm, currentValues: TFormValues, dataSource: unknown): [TForm, TFormValues] {
   const form: TForm = []
   const values = { ...currentValues }
   for (const field of fields) {
     const type = calculated(field.type ?? 'text', values)
     const resolvedOptions = calculated(field.options as never, values)
     if ((type === 'select' || type === 'radio') && resolvedOptions && !Array.isArray(resolvedOptions) && typeof resolvedOptions === 'object' && 'path' in resolvedOptions) {
-      const options = optionData({ ...field, options: resolvedOptions as TOptionData }, values)
+      const options = optionData({ ...field, options: resolvedOptions as TOptionData }, values, {}, dataSource)
       const source = resolvedOptions as TOptionData
       if (field.name && source.filter) {
         const fieldName = field.name
@@ -68,38 +69,46 @@ function prepareForm(fields: TForm, currentValues: TFormValues): [TForm, TFormVa
   return [form, values]
 }
 
-function validationFor(field: TFormElement, values: TFormValues, variables: Record<string, unknown>): yup.AnySchema {
+function validationFor(
+  field: TFormElement,
+  values: TFormValues,
+  variables: Record<string, unknown>,
+  adapter: JSONFormAdapter,
+): yup.AnySchema {
   const type = calculated(field.type ?? 'text', values, variables) ?? 'text'
   const validation = field.validation ?? {}
   let schema: yup.AnySchema
 
-  if (type === 'file') schema = yup.array()
+  if (type === 'hidden') schema = yup.mixed()
+  else if (type === 'file') schema = yup.array()
   else if (type === 'number') schema = yup.number().transform((value, original) => original === '' ? undefined : value)
   else if (type === 'checkbox') schema = yup.boolean()
   else if (type === 'select') schema = yup.string().nullable()
   else schema = yup.string()
 
   if (type === 'email' || calculated(validation.email ?? false, values, variables)) {
-    schema = (schema as yup.StringSchema).email(t('email_error'))
+    schema = (schema as yup.StringSchema).email(adapter.translate('email_error'))
   }
 
   const length = calculated(validation.length, values, variables)
   const min = calculated(validation.min, values, variables)
   const max = calculated(validation.max, values, variables)
-  if (length != null && 'length' in schema) schema = (schema as yup.StringSchema).length(length, t('value_length_error'))
-  if (min != null && 'min' in schema) schema = (schema as yup.StringSchema).min(min, t('value_length_error'))
-  if (max != null && 'max' in schema) schema = (schema as yup.StringSchema).max(max, t('value_length_error'))
+  if (length != null && 'length' in schema) schema = (schema as yup.StringSchema).length(length, adapter.translate('value_length_error'))
+  if (min != null && 'min' in schema) schema = (schema as yup.StringSchema).min(min, adapter.translate('value_length_error'))
+  if (max != null && 'max' in schema) schema = (schema as yup.StringSchema).max(max, adapter.translate('value_length_error'))
 
   const pattern = calculated(validation.pattern, values, variables)
   if (Array.isArray(pattern) && typeof pattern[0] === 'string') {
-    const message = field.name === 'u_phone' ? `${t('phone_pattern_error')} ${phoneMask()}` : t('value_length_error')
+    const message = field.name === 'u_phone'
+      ? `${adapter.translate('phone_pattern_error')} ${adapter.phoneMask()}`
+      : adapter.translate('value_length_error')
     schema = (schema as yup.StringSchema).matches(new RegExp(pattern[0], pattern[1] ?? ''), message)
   }
 
   if (isRequired(field, values, variables)) {
-    if (type === 'checkbox') schema = (schema as yup.BooleanSchema).oneOf([true], t('required_field'))
-    else if (type === 'file') schema = (schema as yup.ArraySchema<unknown[], yup.AnyObject, undefined, ''>).min(1, t('required_field'))
-    else schema = schema.required(t('required_field'))
+    if (type === 'checkbox') schema = (schema as yup.BooleanSchema).oneOf([true], adapter.translate('required_field'))
+    else if (type === 'file') schema = (schema as yup.ArraySchema<unknown[], yup.AnyObject, undefined, ''>).min(1, adapter.translate('required_field'))
+    else schema = schema.required(adapter.translate('required_field'))
   } else {
     schema = schema.nullable().optional()
   }
@@ -113,11 +122,22 @@ export default function JSONForm({
   state = {},
   defaultValues = {},
   errors = {},
-  language = currentLanguage(),
+  language,
   configReady = true,
+  adapter: providedAdapter,
 }: JSONFormProps) {
-  const [unfilteredValues, setValues] = useState<TFormValues>(() => initialValues(fields, defaultValues))
-  const [form, values] = useMemo(() => prepareForm(fields, unfilteredValues), [fields, unfilteredValues])
+  const adapter = useMemo<JSONFormAdapter>(() => ({
+    ...defaultJSONFormAdapter,
+    ...providedAdapter,
+    language: language ?? providedAdapter?.language ?? defaultJSONFormAdapter.language,
+  }), [language, providedAdapter])
+  const [unfilteredValues, setValues] = useState<TFormValues>(
+    () => initialValues(fields, defaultValues, adapter.data),
+  )
+  const [form, values] = useMemo(
+    () => prepareForm(fields, unfilteredValues, adapter.data),
+    [fields, unfilteredValues, adapter.data],
+  )
 
   const baseVariables = useMemo<Record<string, unknown>>(() => ({
     form: {
@@ -135,10 +155,10 @@ export default function JSONForm({
       const visible = parseVariable(calculated(field.visible ?? true, values, baseVariables), baseVariables)
       const disabled = parseVariable(calculated(field.disabled ?? false, values, baseVariables), baseVariables)
       if (!visible || disabled) continue
-      shape[field.name] = validationFor(field, values, baseVariables)
+      shape[field.name] = validationFor(field, values, baseVariables, adapter)
     }
     return yup.object(shape)
-  }, [form, values, baseVariables])
+  }, [form, values, baseVariables, adapter])
 
   const isValid = validationSchema.isValidSync(values)
   const variables = useMemo<Record<string, unknown>>(() => ({
@@ -159,13 +179,12 @@ export default function JSONForm({
     } catch {
       return
     }
-    const submitted = { ...values }
+    const submitted: TFormValues = {}
     for (const field of form) {
       const type = calculated(field.type ?? 'text', values, variables)
-      if (!(field.submit ?? true) || type === 'button' || type === 'submit') {
-        const key = String(calculated(field.name, values, variables) ?? '')
-        if (key) delete submitted[key]
-      }
+      if (!(field.submit ?? true) || type === 'button' || type === 'submit') continue
+      const key = String(calculated(field.name, values, variables) ?? '')
+      if (key) submitted[key] = values[key]
     }
     onSubmit(makeNested(submitted))
   }
@@ -181,12 +200,13 @@ export default function JSONForm({
             values={values}
             variables={variables}
             onChange={handleChange}
-            validationSchema={validationFor(field, values, variables)}
-            language={language}
+            validationSchema={validationFor(field, values, variables, adapter)}
+            language={adapter.language}
+            adapter={adapter}
             errors={errors}
           />
         ) : (
-          <CustomComponent key={`component-${index}`} {...field} values={values} variables={variables} />
+          <CustomComponent key={`component-${index}`} {...field} values={values} variables={variables} adapter={adapter} />
         ))}
       </form>
     </div>

@@ -8,7 +8,7 @@ import {
   type RegistrationUpload,
 } from './auth'
 import JSONForm from './JSONForm'
-import { fallbackRegisterFields, readConfiguredFields, withPasswordFields } from './forms/config'
+import { fallbackRegisterFields, readConfiguredFields, taxiFormAdapter, withPasswordFields } from './forms/config'
 import ProfileEditor from './ProfileEditor'
 
 interface AppProps { useMock: boolean }
@@ -90,10 +90,11 @@ export default function App({ useMock }: AppProps) {
     }
 
     const refCode = String(submitted.ref_code ?? '').trim()
+    const promoCode = String(submitted.promo_code ?? '').trim()
     if (refCode) {
       const referral = await checkReferralCode(refCode)
       if (!referral.exists) {
-        setFormError('Промокод не найден.')
+        setFormError('Реферальный код не найден.')
         return
       }
     }
@@ -107,6 +108,7 @@ export default function App({ useMock }: AppProps) {
       u_role: role,
       u_city: String(submitted.u_city ?? '').trim() || undefined,
       ref_code: refCode || undefined,
+      promo_code: promoCode || undefined,
       u_details: record(submitted.u_details),
       uploads: role === UserRole.Driver ? uploadsFrom(submitted) : undefined,
       u_car: role === UserRole.Driver ? submitted.u_car as DriverCarRequest : undefined,
@@ -178,6 +180,7 @@ export default function App({ useMock }: AppProps) {
         ) : (
           <JSONForm
             fields={registerFields}
+            adapter={taxiFormAdapter()}
             onSubmit={values => void submitRegister(values)}
             state={{ pending: loading, failed: Boolean(state.error), errorMessage: state.error ?? undefined }}
           />

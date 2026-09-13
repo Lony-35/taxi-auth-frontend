@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react'
 import cn from 'classnames'
 import type { AnySchema } from 'yup'
-import { phoneMask, t, type Language } from './adapters'
+import { defaultJSONFormAdapter, type JSONFormAdapter, type Language } from './adapters'
 import { calculated, getTranslation, isRequired, optionData, parseVariable } from './utils'
 import type { TFormElement, TFormValues } from './types'
 
@@ -13,6 +13,7 @@ interface Props {
   language?: Language
   variables?: Record<string, unknown>
   errors?: Record<string, unknown>
+  adapter?: JSONFormAdapter
 }
 
 type InputElement = HTMLInputElement | HTMLSelectElement
@@ -26,6 +27,7 @@ export default function JSONFormElement({
   language = { iso: 'ru' },
   variables = {},
   errors = {},
+  adapter = defaultJSONFormAdapter,
 }: Props) {
   const name = String(calculated(formElement.name, values, variables) ?? '')
   const type = calculated(formElement.type ?? 'text', values, variables) ?? 'text'
@@ -62,19 +64,19 @@ export default function JSONFormElement({
   }
 
   let hint = formElement.hint
-  const inferredHint = String(getTranslation(`hint_${name.split('.').at(-1)}`))
+  const inferredHint = String(getTranslation(`hint_${name.split('.').at(-1)}`, adapter.translate))
   if (!hint && inferredHint !== `hint_${name.split('.').at(-1)}`) hint = inferredHint
 
   const hintElement = hint ? (
     <span className="element__hint">
       <span className="element__hint_icon">?</span>
-      <span className="element__hint_message">{String(getTranslation(hint))}</span>
+      <span className="element__hint_message">{String(getTranslation(hint, adapter.translate))}</span>
     </span>
   ) : null
 
   let labelElement = formElement.label == null ? null : (
     <div className="element__label">
-      {String(getTranslation(calculated(formElement.label, values, variables)) ?? '')}
+      {String(getTranslation(calculated(formElement.label, values, variables), adapter.translate) ?? '')}
       {isRequired(formElement, values, variables) && <span className="element__required">*</span>}
       {hintElement}
     </div>
@@ -83,12 +85,12 @@ export default function JSONFormElement({
   if (type === 'hidden') return <input type="hidden" name={name} value={String(value ?? '')} />
   if (type === 'button' || type === 'submit') return (
     <button className="button json-form-button" type={type} disabled={disabled}>
-      {String(getTranslation(calculated(formElement.label, values, variables)) ?? '')}
+      {String(getTranslation(calculated(formElement.label, values, variables), adapter.translate) ?? '')}
     </button>
   )
 
   let control: React.ReactNode
-  const options = optionData(formElement, values, variables)
+  const options = optionData(formElement, values, variables, adapter.data)
 
   if (type === 'select') {
     const required = isRequired(formElement, values, variables)
@@ -97,7 +99,7 @@ export default function JSONFormElement({
         {!required && <option value="">-</option>}
         {options.map(option => (
           <option key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label ? String(getTranslation(option.label)) : option.labelLang?.[language.iso] ?? String(option.value)}
+            {option.label ? String(getTranslation(option.label, adapter.translate)) : option.labelLang?.[language.iso] ?? String(option.value)}
           </option>
         ))}
       </select>
@@ -113,7 +115,7 @@ export default function JSONFormElement({
           value={option.value}
           checked={value == option.value}
         />
-        <span>{option.label ? String(getTranslation(option.label)) : option.labelLang?.[language.iso] ?? String(option.value)}</span>
+        <span>{option.label ? String(getTranslation(option.label, adapter.translate)) : option.labelLang?.[language.iso] ?? String(option.value)}</span>
       </label>
     ))
   } else if (type === 'checkbox') {
@@ -129,7 +131,7 @@ export default function JSONFormElement({
           onChange={event => { validate(event.target.checked); onChange(event, name, event.target.checked) }}
         />
         <span>
-          <span>{String(getTranslation(calculated(formElement.label, values, variables)) ?? '')}</span>
+          <span>{String(getTranslation(calculated(formElement.label, values, variables), adapter.translate) ?? '')}</span>
           {isRequired(formElement, values, variables) && <span className="element__required">*</span>}
         </span>
       </label>
@@ -180,7 +182,7 @@ export default function JSONFormElement({
         value={String(value ?? '')}
         type={type === 'phone' ? 'tel' : type}
         className="element__text_input"
-        placeholder={type === 'phone' ? phoneMask() : formElement.placeholder}
+        placeholder={type === 'phone' ? adapter.phoneMask() : formElement.placeholder}
       />
     )
   }
@@ -194,7 +196,7 @@ export default function JSONFormElement({
         {control}
         {!labelElement && hintElement}
       </div>
-      {type === 'file' && formElement.accept?.includes('image') && <div className="element__field_subscription">{t('subscription_images_upload')}</div>}
+      {type === 'file' && formElement.accept?.includes('image') && <div className="element__field_subscription">{adapter.translate('subscription_images_upload')}</div>}
       {errorMessage && <div className="element__field_error">{errorMessage}</div>}
       {!errorMessage && Boolean(externalError) && <div className="element__field_error">{String(externalError)}</div>}
     </Wrap>

@@ -36,6 +36,7 @@ export interface TaxiUser {
   u_active?: boolean
   u_phone_checked?: boolean
   ref_code?: string
+  promo_code?: string
   u_details?: Record<string, unknown>
   [key: string]: unknown
 }
@@ -62,6 +63,8 @@ export interface DriverCar extends DriverCarRequest {
 export interface ProfileDocumentChange { existingIds?: Array<string | number>; files?: Blob[] }
 export interface UpdateProfileRequest {
   values: Record<string, unknown>
+  /** Field paths supplied by the dynamic profile schema. */
+  schemaFields?: string[]
   avatar?: Blob
   documents?: Partial<Record<'passport_photo' | 'driver_license_photo', ProfileDocumentChange>>
   car?: DriverCar
@@ -78,6 +81,7 @@ export interface RegisterRequest {
   u_role?: UserRole
   u_city?: string
   ref_code?: string
+  promo_code?: string
   u_details?: Record<string, unknown>
   uploads?: RegistrationUpload[]
   u_car?: DriverCarRequest

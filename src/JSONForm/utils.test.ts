@@ -24,9 +24,26 @@ describe('JSON Form compatibility utilities', () => {
     expect(makeNested(makeFlat(nested))).toEqual(nested)
   })
 
+  it('merges a parent object with dotted children without losing dynamic details', () => {
+    expect(makeNested({
+      u_details: { existing: 'kept', street: 'old' },
+      'u_details.street': 'new',
+      'u_details.dynamic': 'saved',
+    })).toEqual({
+      u_details: { existing: 'kept', street: 'new', dynamic: 'saved' },
+    })
+  })
+
+  it('lets dotted children replace an ambiguous scalar parent', () => {
+    expect(makeNested({
+      u_details: '',
+      'u_details.city': 'Moscow',
+    })).toEqual({ u_details: { city: 'Moscow' } })
+  })
+
   it('gets options from window.data without requiring Array.map', () => {
     window.data = { cities: { '1': { ru: 'Москва' }, '2': { ru: 'Казань' } } }
-    expect([...getOptions({ name: 'city', type: 'select', options: { path: 'cities' } })]).toEqual([
+    expect([...getOptions({ name: 'city', type: 'select', options: { path: 'cities' } }, window.data)]).toEqual([
       { value: '1', labelLang: { ru: 'Москва' } },
       { value: '2', labelLang: { ru: 'Казань' } },
     ])

@@ -1,4 +1,3 @@
-import { t } from './adapters'
 import type {
   TCalculate,
   TCondition,
@@ -32,8 +31,8 @@ export const getConditionResult = (left: unknown, op: TOperation, right: unknown
   }
 }
 
-export const getTranslation = (value: unknown): unknown =>
-  typeof value === 'string' ? t(value) : value
+export const getTranslation = (value: unknown, translate: (key: string) => string = key => key): unknown =>
+  typeof value === 'string' ? translate(value) : value
 
 export const deepGet = (source: unknown, path: string): unknown =>
   path.split('.').filter(Boolean).reduce<unknown>((result, key) =>
@@ -82,13 +81,18 @@ export const isRequired = (
   ? Boolean(calculated(field.validation.required, values, variables))
   : ['select', 'radio'].includes(String(calculated(field.type, values, variables) ?? field.type))
 
-export function optionData(field: TFormElement, values: TFormValues, variables: Record<string, unknown> = {}): TOption[] {
+export function optionData(
+  field: TFormElement,
+  values: TFormValues,
+  variables: Record<string, unknown> = {},
+  dataSource: unknown = {},
+): TOption[] {
   const resolved = calculated(field.options, values, variables)
   if (!resolved) return []
   if (Array.isArray(resolved)) return resolved.filter(item => item && typeof item === 'object' && 'value' in item) as TOption[]
 
   const descriptor = resolved as TOptionData
-  const map = deepGet(window.data, descriptor.path)
+  const map = deepGet(dataSource, descriptor.path)
   if (!map || typeof map !== 'object') return []
   const selected = descriptor.filter ? values[descriptor.filter.by] : undefined
   return Object.entries(map as Record<string, unknown>)
@@ -102,8 +106,8 @@ export function optionData(field: TFormElement, values: TFormValues, variables: 
     }))
 }
 
-export function* getOptions(field: TFormElement): Iterable<TOption> {
-  yield* optionData(field, {}, {})
+export function* getOptions(field: TFormElement, dataSource: unknown = {}): Iterable<TOption> {
+  yield* optionData(field, {}, {}, dataSource)
 }
 
 export function makeFlat(value: Record<string, unknown>, prefix = '', result: TFormValues = {}): TFormValues {
@@ -119,12 +123,22 @@ export function makeFlat(value: Record<string, unknown>, prefix = '', result: TF
 
 export function makeNested(values: TFormValues): Record<string, unknown> {
   const result: Record<string, unknown> = {}
-  for (const [path, value] of Object.entries(values)) {
+  const entries = Object.entries(values)
+    .sort(([left], [right]) => left.split('.').length - right.split('.').length)
+
+  for (const [path, value] of entries) {
     const keys = path.split('.')
     let target = result
     keys.forEach((key, index) => {
-      if (index === keys.length - 1) target[key] = value
-      else target = target[key] && typeof target[key] === 'object'
+      if (index === keys.length - 1) {
+        const current = target[key]
+        target[key] = current && value
+          && typeof current === 'object' && !Array.isArray(current)
+          && typeof value === 'object' && !Array.isArray(value)
+          ? { ...current as Record<string, unknown>, ...value as Record<string, unknown> }
+          : value
+      } else target = target[key] && typeof target[key] === 'object'
+        && !Array.isArray(target[key])
         ? target[key] as Record<string, unknown>
         : target[key] = {}
     })

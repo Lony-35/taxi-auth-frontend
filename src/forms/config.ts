@@ -1,5 +1,45 @@
-import { UserCheckState, UserRole, type AuthUser } from '../auth'
+import { UserRole } from '../auth'
 import type { TForm, TFormElement } from '../JSONForm'
+import type { JSONFormAdapter } from '../JSONForm/adapters'
+
+const translations: Record<string, string> = {
+  required_field: 'Обязательное поле',
+  email_error: 'Укажите корректный email',
+  value_length_error: 'Значение не соответствует ограничению',
+  phone_pattern_error: 'Телефон указан неверно',
+  subscription_images_upload: 'Допустимы изображения PNG и JPEG',
+  password: 'Пароль',
+  password_confirm: 'Повторите пароль',
+}
+
+/** Taxi host bridge; all window.data coupling is kept outside JSONForm. */
+export function taxiFormAdapter(): JSONFormAdapter {
+  const data = window.data ?? {}
+  const iso = data.language?.iso
+  return {
+    data,
+    language: { iso: typeof iso === 'string' ? iso : 'ru' },
+    translate(value) {
+      const configured = data.translations?.[value]
+      return typeof configured === 'string' ? configured : translations[value] ?? value
+    },
+    phoneMask() {
+      const value = data.site_constants?.def_maska_tel?.value
+      return typeof value === 'string' ? value : '+7 (___) ___-__-__'
+    },
+  }
+}
+
+declare global {
+  interface Window {
+    data?: {
+      site_constants?: Record<string, { value?: unknown }>
+      translations?: Record<string, string>
+      language?: { iso?: string }
+      [key: string]: unknown
+    }
+  }
+}
 
 const emailPattern = ['^(([^<>()\\[\\].,;:\\s@"]+(\\.[^<>()\\[\\].,;:\\s@"]+)*)|(".+"))@(([^<>()[\\].,;:\\s@"]+\\.)+[^<>()[\\].,;:\\s@"]{2,})$', 'i']
 const phonePattern = ['^[+]?\\d{1,3}[(]?\\d{3}[)]?[-\\s.]?\\d{3}[-\\s.]?\\d{3,6}$', 'i']
@@ -30,7 +70,8 @@ export const fallbackRegisterFields: TForm = [
       pattern: phonePattern,
     },
   },
-  { name: 'ref_code', label: 'Промокод' },
+  { name: 'ref_code', label: 'Реферальный код' },
+  { name: 'promo_code', label: 'Промокод' },
   { name: 'u_city', label: 'Город', visible: driverVisible },
   {
     name: 'u_details.work_type', label: 'Тип работы', type: 'select', visible: driverVisible,
@@ -67,7 +108,8 @@ export const fallbackProfileFields: TForm = [
   { name: 'driver_license_photo', label: 'Новые фото водительского удостоверения', type: 'file', multiple: true, accept: 'image/png,image/jpeg' },
   { name: 'u_gps_software', label: 'Навигация' },
   { name: 'u_active', label: 'Активен', type: 'checkbox' },
-  { name: 'ref_code', label: 'Промокод' },
+  { name: 'ref_code', label: 'Реферальный код' },
+  { name: 'promo_code', label: 'Промокод' },
   { name: 'profile_submit', label: 'Сохранить', type: 'submit' },
 ]
 
@@ -95,17 +137,4 @@ export function withPasswordFields(fields: TForm): TForm {
   return insertion < 0
     ? [...fields, ...added]
     : [...fields.slice(0, insertion), ...added, ...fields.slice(insertion)]
-}
-
-const clientFields = new Set(['u_role', 'u_name', 'u_family', 'u_middle', 'u_phone', 'u_email', 'u_photo', 'u_lang', 'u_currency', 'ref_code', 'u_details'])
-const driverRequiredFields = new Set(['u_role', 'u_name', 'u_family', 'u_middle', 'u_phone', 'u_email', 'u_photo', 'u_city', 'u_lang_skills', 'u_description', 'u_birthday', 'ref_code', 'u_details', 'passport_photo', 'driver_license_photo'])
-const driverActiveFields = new Set(['u_role', 'u_lang', 'u_currency', 'u_gps_software', 'u_active', 'out_drive', 'out_address', 'out_latitude', 'out_longitude', 'out_est_datetime', 'out_s_address', 'out_s_latitude', 'out_s_longitude', 'out_passengers', 'out_luggage', 'ref_code', 'u_details'])
-
-export function profileFieldsForUser(fields: TForm, user: AuthUser): TForm {
-  const allowed = user.u_role === UserRole.Client
-    ? clientFields
-    : !user.u_check_state || user.u_check_state === UserCheckState.Required
-      ? driverRequiredFields
-      : user.u_check_state === UserCheckState.Active ? driverActiveFields : new Set<string>()
-  return fields.filter(field => !field.name || field.type === 'submit' || allowed.has(field.name.split('.')[0]))
 }

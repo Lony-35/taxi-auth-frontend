@@ -1,40 +1,67 @@
 # JSON Form Engine transfer
 
-## Transferred from Taxi
+## Scope
 
-- `JSONForm`, `JSONFormElement`, the type model, calculation utilities, custom component registry and original SCSS component structure.
-- Text, email, number, phone, password, hidden, select, checkbox, radio, file, button and submit fields.
-- Expressions and variables, dynamic/dependent options, default values, Yup validation, multiple files, excluded submit values and flat/nested conversion.
-- `form_register` and `form_profile` parsing from `window.data.site_constants`.
-- Registration password/password-confirmation insertion before agreement or submit controls when absent from configuration.
-- Profile field filtering for client and driver check states.
+This stage restores the reusable JSON Form Engine and connects it to the Taxi
+registration/profile screens. It is **not** presented as completion of the wider
+Universal Auth API migration.
 
-## Temporarily retained
+## Generic engine
 
-- Driver registration fields, document tuples and car data remain mapped by the Auth UI to the existing Taxi Auth API.
-- Client/driver profile allow-lists remain at the form-integration boundary.
-- `window.data`, `site_constants` and `def_maska_tel` remain supported as the configuration contract.
-- The existing login form remains because login is not a `form_register` or `form_profile` consumer.
+- `JSONForm`, `JSONFormElement`, the field type model, expressions,
+  calculations, `@form` variables, dependent options and custom components.
+- Yup validation, visibility/disabled calculations, multiple file fields and
+  deterministic flat/nested conversion.
+- Only schema-declared values are submitted. A parent object such as
+  `u_details` is merged with `u_details.*` children without losing either side.
+- Host data, translation, language and phone-mask dependencies are injected
+  through `JSONFormAdapter`; the engine no longer reads Taxi `window.data`.
 
-## Adapters
+## Taxi integration boundary
 
-- Taxi Redux configuration status is represented by `configReady`; the Auth frontend does not import the complete Taxi Redux tree.
-- Taxi localization and language selectors are represented by small adapters which first read `window.data` and otherwise use standalone Russian defaults.
-- Taxi Button and Alert dependencies use local accessible React controls while preserving JSON Form semantics.
-- Deep-get, flatten and nesting helpers are colocated with the engine so the complete Taxi utility module is not pulled into Auth.
+- `src/forms/config.ts` is the Taxi host bridge. It reads
+  `window.data.site_constants.form_register/form_profile`, supplies localization,
+  dynamic option data and `def_maska_tel`, and owns the fallback Taxi schemas.
+- `ProfileEditor` renders every field supplied by `form_profile`; it no longer
+  removes dynamic fields with a UI-level role/check-state allow-list.
+- The Taxi provider receives schema field paths and permits their top-level
+  values while excluding provider-managed identity, document and car fields.
+  Legacy allow-lists remain only as a compatibility fallback for callers that
+  do not provide a schema.
+- Driver document tuples, car editing, referral validation and phone
+  normalization remain inside Taxi integration/provider code.
 
-## Follow-up cleanup
+## Referral and promo
 
-- Extract localization/config adapters behind a consumer-supplied interface after parity is confirmed against production data.
-- Move Taxi driver documents, cars and check-state filtering into a Taxi form-integration package without changing the JSON Form DSL.
-- Remove standalone fallback schemas only when the embedding application always supplies production `site_constants`.
+- `ref_code` is a referral code and is the only value checked by the referral
+  endpoint.
+- `promo_code` is an independent value.
+- Both values may be present and are sent to the Taxi registration API together.
+- Fallback registration/profile labels no longer call `ref_code` a promo code.
+
+## Regression evidence
+
+`src/forms/taxiSiteConstants.fixture.ts` stores production-shaped
+`site_constants` snapshots based on the Taxi repository's
+`RegisterJSON.tsx`, `ProfileModal.tsx` and `json-form.md` contracts. The tests
+load them through the same `readConfiguredFields()` path as the application and
+cover:
+
+- `form_register` and `form_profile` parsing;
+- expressions/calculations, `@form`, dependent options and visible/disabled;
+- validation and automatic `password/password_confirm` insertion;
+- simultaneous `ref_code` and `promo_code` submit;
+- dynamic profile attributes and conflict-free `u_details` nested submit;
+- schema-based Taxi API filtering;
+- multiple files and custom component compatibility.
+
+ESLint now contains substantive correctness rules instead of an empty rule set.
 
 ## Verification
 
-- Dynamic form JSON parsing and password insertion.
-- All expression operators and `@form` variable access.
-- Field rendering, visibility, disabled submit, filtered options and nested submit.
-- Required/email validation and multiple file change/removal behavior.
-- Existing authentication, storage, identity and Taxi provider regressions.
-
-Commands: `npm test`, `npm run build`.
+```text
+npm run typecheck  passed
+npm run lint       passed (zero warnings)
+npm test           14 files, 84 tests passed
+npm run build      passed
+```
