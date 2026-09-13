@@ -239,3 +239,14 @@ recovery alongside login, registration, restore, logout and profile update.
 The public API audit, complete lifecycle table, Fake/Limited replacement proof,
 Taxi regression and remaining GAPs are in
 [`docs/PR-5-REPORT.md`](docs/PR-5-REPORT.md).
+## Dynamic JSON forms
+
+Registration and profile editing now use the JSON Form Engine restored from the
+Taxi frontend. At runtime the UI reads `window.data.site_constants.form_register`
+and `form_profile`; standalone schemas are only a fallback when Taxi
+configuration is absent. The engine keeps expressions, `@form` variables,
+dynamic and dependent options, Yup validation, file fields, custom components
+and nested submit values.
+
+The transfer, temporary adapters, retained Taxi boundaries and verification are
+documented in [`docs/JSON-FORM-TRANSFER.md`](docs/JSON-FORM-TRANSFER.md).

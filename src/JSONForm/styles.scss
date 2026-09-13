@@ -1,0 +1,157 @@
+.json-form {
+  position: relative;
+  z-index: 1;
+
+  form { display: grid; gap: 18px; }
+}
+
+.element {
+  &__field {
+    display: block;
+    margin: 0;
+
+    &--error input,
+    &--error select { border-color: #b42318; }
+
+    &_error { color: #b42318; margin-top: 5px; font-size: .8rem; }
+    &_subscription { margin-top: 5px; color: #819083; font-size: .78rem; }
+  }
+
+  &__label { margin-bottom: 8px; font-size: .88rem; font-weight: 700; }
+  &__required { color: #b42318; margin-left: 3px; }
+
+  &__radio {
+    display: block;
+    margin-bottom: 10px;
+
+    &_input {
+      position: absolute;
+      opacity: 0;
+
+      & + span { display: flex; align-items: center; cursor: pointer; min-height: 25px; }
+      & + span::before {
+        content: '';
+        display: inline-block;
+        width: 25px;
+        height: 25px;
+        margin-right: .5em;
+        box-sizing: border-box;
+        border: 2px solid #0f2c76;
+        border-radius: 50%;
+      }
+      &:checked + span::before { border: 7px solid #1c8c00; background: #fff; }
+      &:disabled + span { cursor: auto; opacity: .3; }
+    }
+  }
+
+  &__checkbox {
+    display: block;
+    position: relative;
+
+    &_input {
+      position: absolute;
+      opacity: 0;
+
+      & + span { display: inline-block; min-height: 25px; margin-left: 40px; cursor: pointer; }
+      & + span::before {
+        position: absolute;
+        left: 0;
+        top: 0;
+        content: '';
+        display: inline-grid;
+        place-items: center;
+        width: 25px;
+        height: 25px;
+        box-sizing: border-box;
+        border: 2px solid #0f2c76;
+        border-radius: 4px;
+      }
+      &:checked + span::before { content: '✓'; color: #fff; border-color: #1c8c00; background: #1fdc00; }
+      &:disabled + span { cursor: auto; opacity: .5; }
+    }
+  }
+
+  &__select_input,
+  &__text_input {
+    display: block;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 15px;
+    border: 1px solid #858585;
+    border-radius: 14px;
+    background: #fff;
+
+    &:disabled { opacity: .3; }
+  }
+
+  &__file {
+    display: flex;
+    flex-wrap: wrap;
+    min-height: 120px;
+    padding: 5px;
+    border: 1px solid #858585;
+    border-radius: 14px;
+    background: #fff;
+
+    &_value,
+    &_add {
+      display: grid;
+      place-items: center;
+      width: 90px;
+      height: 110px;
+      margin: 0 5px 0 0;
+      overflow: hidden;
+      border: 1px solid #858585;
+      border-radius: 10px;
+      background: #f3f7ef;
+      cursor: pointer;
+    }
+    &_value::after { content: 'Удалить'; font-size: .72rem; }
+    &_add::after { content: '+'; font-size: 2rem; color: #245f31; }
+    &_add_disabled { cursor: auto; opacity: .3; }
+    &_input { display: none; }
+  }
+
+  &__hint {
+    position: relative;
+    display: inline-block;
+    margin-left: 10px;
+
+    &_icon {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      cursor: help;
+    }
+    &_message {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 6px);
+      display: none;
+      min-width: 200px;
+      padding: 8px;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 0 8px rgba(0, 0, 0, .2);
+      font-weight: 400;
+    }
+    &:hover &_message { display: block; }
+  }
+}
+
+.json-form-button { width: 100%; }
+.json-form-alert {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #8b2828;
+  background: #fff0f0;
+
+  button { border: 0; background: transparent; cursor: pointer; }
+}
+
