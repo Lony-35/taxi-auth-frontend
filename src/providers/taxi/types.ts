@@ -63,7 +63,11 @@ export interface DriverCar extends DriverCarRequest {
 export interface ProfileDocumentChange { existingIds?: Array<string | number>; files?: Blob[] }
 export interface UpdateProfileRequest {
   values: Record<string, unknown>
-  /** Field paths supplied by the dynamic profile schema. */
+  /**
+   * Presentation-only field paths supplied by the host's dynamic profile schema.
+   * They limit what this client submits, but are not an authorization boundary:
+   * the backend must validate attributes against its authoritative schema.
+   */
   schemaFields?: string[]
   avatar?: Blob
   documents?: Partial<Record<'passport_photo' | 'driver_license_photo', ProfileDocumentChange>>

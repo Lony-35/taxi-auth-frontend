@@ -45,7 +45,11 @@ const providerManagedProfileFields = new Set([
   'passport_photo', 'driver_license_photo', 'u_car',
 ])
 
-/** Keep the dynamic schema generic and constrain provider-owned fields here. */
+/**
+ * Apply the host schema as a client-side submission filter and keep explicitly
+ * provider-owned fields out of the payload. This is a UX boundary only; a
+ * client-controlled schema cannot authorize fields on behalf of the backend.
+ */
 export function schemaProfileFields(paths: string[]): Set<string> {
   return new Set(paths
     .map(path => path.split('.')[0])

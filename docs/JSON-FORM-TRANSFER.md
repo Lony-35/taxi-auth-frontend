@@ -28,6 +28,11 @@ Universal Auth API migration.
   values while excluding provider-managed identity, document and car fields.
   Legacy allow-lists remain only as a compatibility fallback for callers that
   do not provide a schema.
+- The browser-provided schema is a presentation and UX contract, not an
+  authorization boundary. This frontend filter reduces accidental submissions,
+  but the server must validate submitted profile attributes against an
+  authoritative server-side schema. That server contract belongs to the next
+  Universal Auth API stage and is not implemented by this migration.
 - Driver document tuples, car editing, referral validation and phone
   normalization remain inside Taxi integration/provider code.
 
@@ -41,11 +46,14 @@ Universal Auth API migration.
 
 ## Regression evidence
 
-`src/forms/taxiSiteConstants.fixture.ts` stores production-shaped
-`site_constants` snapshots based on the Taxi repository's
-`RegisterJSON.tsx`, `ProfileModal.tsx` and `json-form.md` contracts. The tests
-load them through the same `readConfiguredFields()` path as the application and
-cover:
+`src/forms/taxiSiteConstants.fixture.ts` stores a manually curated,
+production-shaped `site_constants` fixture based on the Taxi repository's
+`RegisterJSON.tsx`, `ProfileModal.tsx` and `json-form.md` contracts. It includes
+deliberate regression-only fields such as `loyalty_tier`, `promo_code` and
+`u_details.region`; it is not an export of the current production JSON and does
+not demonstrate 1:1 compatibility with production `form_register` or
+`form_profile`. The tests load the fixture through the same
+`readConfiguredFields()` path as the application and cover:
 
 - `form_register` and `form_profile` parsing;
 - expressions/calculations, `@form`, dependent options and visible/disabled;
