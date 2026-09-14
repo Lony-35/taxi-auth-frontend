@@ -16,7 +16,7 @@ import type {
   UpdateProfileRequest,
 } from './types'
 import { normalizeUser } from './taxiUserMapping'
-import { allowedProfileFields, carProfileFields, filterFields, toLegacyDetails } from './profile'
+import { allowedProfileFields, carProfileFields, filterFields, schemaProfileFields, toLegacyDetails } from './profile'
 
 interface ApiEnvelope {
   status?: string
@@ -260,7 +260,10 @@ export class HttpAuthClient implements TaxiApi {
       }
     }
 
-    const values = filterFields(data.values, allowedProfileFields(currentUser))
+    const allowed = data.schemaFields?.length
+      ? schemaProfileFields(data.schemaFields)
+      : allowedProfileFields(currentUser)
+    const values = filterFields(data.values, allowed)
     if (currentUser.u_role === 2 && typeof values.u_phone === 'string') {
       values.u_phone = normalizeDriverPhone(values.u_phone, this.options.driverPhonePrefix)
     }

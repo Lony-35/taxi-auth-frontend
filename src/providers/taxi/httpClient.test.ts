@@ -69,15 +69,23 @@ describe('HttpAuthClient', () => {
       }))
     const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
 
-    const result = await client.register({ u_name: 'Новый', u_email: 'new@example.com' })
+    const result = await client.register({
+      u_name: 'Новый',
+      u_email: 'new@example.com',
+      ref_code: 'PARTNER',
+      promo_code: 'SALE10',
+    })
 
     expect(result.userId).toBe('42')
     expect(result.emailStatus).toBe(true)
     expect(result.tokens).toEqual({ token: 't', u_hash: 'h' })
     expect(result.user?.u_name).toBe('Новый')
+    const registerForm = fetcher.mock.calls[0][1]?.body as FormData
+    expect(registerForm.get('ref_code')).toBe('PARTNER')
+    expect(registerForm.get('promo_code')).toBe('SALE10')
   })
 
-  it('поддерживает восстановление пароля и проверку промокода', async () => {
+  it('поддерживает восстановление пароля и проверку реферального кода', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(json({ status: 'success' }))
       .mockResolvedValueOnce(json({ data: { ref_code_free: false } }))
@@ -162,6 +170,27 @@ describe('HttpAuthClient', () => {
     expect(editData).toMatchObject({ u_name: 'Новое имя', u_email: 'new@example.com' })
     expect(editData).not.toHaveProperty('u_gps_software')
     expect(result.user.u_name).toBe('Новое имя')
+  })
+
+  it('сохраняет динамические поля, разрешённые form_profile schema', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: 'success' }))
+      .mockResolvedValueOnce(json({
+        data: { user: { 1: { u_id: 1, u_name: 'User', u_email: 'u@example.com', u_role: 1 } } },
+      }))
+    const client = new HttpAuthClient({ baseUrl: 'https://api.example', fetch: fetcher })
+    const currentUser = { u_id: '1', u_name: 'User', u_email: 'u@example.com', u_role: UserRole.Client }
+
+    await client.updateProfile(currentUser, {
+      values: { u_name: 'User', loyalty_tier: 'gold', u_gps_software: 'not-in-schema' },
+      schemaFields: ['u_name', 'loyalty_tier'],
+    }, { token: 't', u_hash: 'h' })
+
+    const editForm = fetcher.mock.calls[0][1]?.body as FormData
+    expect(JSON.parse(String(editForm.get('data')))).toEqual({
+      u_name: 'User',
+      loyalty_tier: 'gold',
+    })
   })
 
   it('редактирует автомобиль и документы водителя до проверки', async () => {

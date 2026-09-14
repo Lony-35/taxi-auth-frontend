@@ -40,6 +40,23 @@ export function filterFields(
   return Object.fromEntries(Object.entries(values).filter(([key]) => allowed.has(key)))
 }
 
+const providerManagedProfileFields = new Set([
+  'u_id', 'u_hash', 'token', 'u_role', 'u_check_state',
+  'passport_photo', 'driver_license_photo', 'u_car',
+])
+
+/**
+ * Apply the host schema as a client-side submission filter and keep explicitly
+ * provider-owned fields out of the payload. This is a UX boundary only; a
+ * client-controlled schema cannot authorize fields on behalf of the backend.
+ */
+export function schemaProfileFields(paths: string[]): Set<string> {
+  return new Set(paths
+    .map(path => path.split('.')[0])
+    .filter(Boolean)
+    .filter(path => !providerManagedProfileFields.has(path)))
+}
+
 export function toLegacyDetails(details: Record<string, unknown>) {
   return Object.entries(details).map(([key, value]) => ['=', [key], value ?? ''])
 }

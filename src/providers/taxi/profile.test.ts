@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedProfileFields, filterFields } from './profile'
+import { allowedProfileFields, filterFields, schemaProfileFields } from './profile'
 import { UserCheckState, UserRole, type TaxiUser } from './types'
 
 const baseUser: TaxiUser = {
@@ -36,5 +36,30 @@ describe('profile field policy from taxi ProfileModal', () => {
   it('не разрешает редактирование заблокированному или отклонённому водителю', () => {
     const user = { ...baseUser, u_role: UserRole.Driver, u_check_state: UserCheckState.Blocked }
     expect(allowedProfileFields(user).size).toBe(0)
+  })
+
+  it('разрешает динамические schema-поля только внутри Taxi adapter boundary', () => {
+    const allowed = schemaProfileFields([
+      'u_name',
+      'u_details.street',
+      'loyalty_tier',
+      'promo_code',
+      'u_role',
+      'u_car.cm_id',
+    ])
+    expect(filterFields({
+      u_name: 'New',
+      u_details: { street: 'Main' },
+      loyalty_tier: 'gold',
+      promo_code: 'SALE10',
+      u_role: UserRole.Administrator,
+      u_car: { cm_id: '7' },
+      injected: true,
+    }, allowed)).toEqual({
+      u_name: 'New',
+      u_details: { street: 'Main' },
+      loyalty_tier: 'gold',
+      promo_code: 'SALE10',
+    })
   })
 })
